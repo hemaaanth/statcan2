@@ -420,13 +420,15 @@ def _worker_build(pid):
         return pid, {"status": "error", "errors": [str(exc)], "warnings": [], "seconds": 0}, {}
 
 
-def run(args):
+def run(args, worker=_worker_build, family="wds", script="tools/wds_build.py", pid_check=None):
+    """Build args.pids into <out>/<build-id>/. Each finished table is saved to reports/<pid>.json at once, so a
+    killed run loses only the tables in flight; --resume keeps the saved ok tables and builds the rest."""
     capture = Path(args.capture)
     Drive(capture, args.mount_uuid, reserve=0)
     out = Path(args.out) / args.build_id
     drive = Drive(out, args.mount_uuid, int(args.reserve_gib * 1024**3))
-    if out.exists():
-        raise StorageStop(f"build directory exists: {out}")
+    if out.exists() and not args.resume:
+        raise StorageStop(f"build directory exists: {out} (use --resume to continue it)")
     inventory_path = capture / "inventory.json"
     records = json.loads(inventory_path.read_text())
     tables = inventory_tables(records)
@@ -435,23 +437,42 @@ def run(args):
     unknown = [pid for pid in args.pids if pid not in known]
     if unknown:
         raise StorageStop(f"PIDs not in the capture inventory: {unknown}")
+    if pid_check:
+        pid_check(args.pids)
 
-    for sub in ("catalogue", "obs", "tmp"):
+    for sub in ("catalogue", "obs", "reports"):
         drive.mkdir(out / sub)
+    if (out / "tmp").exists():
+        shutil.rmtree(out / "tmp")  # spill files of a killed run
+    drive.mkdir(out / "tmp")
+    for partial in (out / "obs").glob("*.tmp"):
+        partial.unlink()
+    saved = {}
+    for path in (out / "reports").glob("*.json"):
+        entry = json.loads(path.read_text())
+        parquet = entry["report"].get("parquet")
+        if entry["report"]["status"] == "ok" and parquet and (out / parquet["path"]).exists() \
+                and (out / parquet["path"]).stat().st_size == parquet["bytes"]:
+            saved[path.stem] = entry
     # Largest ZIPs first so the multi-GB tables never become the last straggler.
+    todo = [pid for pid in args.pids if pid not in saved]
     zip_bytes = {pid: (capture / "zips" / f"{pid}-en.zip").stat().st_size if (capture / "zips" / f"{pid}-en.zip").exists() else 0
-                 for pid in args.pids}
-    order = sorted(args.pids, key=lambda p: -zip_bytes[p])
-    reports = {}
+                 for pid in todo}
+    order = sorted(todo, key=lambda p: -zip_bytes[p])
+    print(f"{len(args.pids) - len(todo)} tables kept from earlier runs, {len(order)} to build", flush=True)
     memory = max(1, args.memory_gib // args.jobs)
     with multiprocessing.get_context("forkserver").Pool(args.jobs, _worker_init,
                                                         (capture, out, args.mount_uuid, drive.reserve, memory)) as pool:
-        for i, (pid, report, rows) in enumerate(pool.imap_unordered(_worker_build, order), 1):
-            reports[pid] = report
-            for name, items in rows.items():
-                tables[name].extend(items)
+        for i, (pid, report, rows) in enumerate(pool.imap_unordered(worker, order), 1):
+            saved[pid] = {"report": report, "rows": rows}
+            drive.atomic_json(out / "reports" / f"{pid}.json", saved[pid])
             print(f"[{i}/{len(order)}] {pid} {report['status']} rows={report.get('row_count')} {report['seconds']}s "
                   f"{'; '.join(report['errors'])}", flush=True)
+    reports = {}
+    for pid in args.pids:
+        reports[pid] = saved[pid]["report"]
+        for name, items in saved[pid]["rows"].items():
+            tables[name].extend(items)
     con = duckdb.connect()
     con.execute(f"SET temp_directory = '{(out / 'tmp').as_posix()}'")
     con.execute(f"SET memory_limit = '{args.memory_gib}GB'")
@@ -468,10 +489,10 @@ def run(args):
     shutil.rmtree(out / "tmp")
 
     manifest = {
-        "build_id": args.build_id, "built_at_utc": utc_now(), "capture_dir": str(capture),
+        "build_id": args.build_id, "built_at_utc": utc_now(), "family": family, "capture_dir": str(capture),
         "capture_id": capture.name, "language": "en",
         "inventory": {"path": str(inventory_path), "sha256": sha256_file(inventory_path), "records": len(records)},
-        "tool": {"script": "tools/wds_build.py", "python": platform.python_version(), "duckdb": duckdb.__version__,
+        "tool": {"script": script, "python": platform.python_version(), "duckdb": duckdb.__version__,
                  "pyarrow": pa.__version__},
         "catalogue": files, "tables": reports,
         "summary": Counter(r["status"] for r in reports.values()),
@@ -481,8 +502,8 @@ def run(args):
     return 0 if manifest["summary"].get("error", 0) == 0 else 2
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(description=__doc__, **run_options):
+    parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--capture", required=True, help="capture directory holding inventory.json, zips/, manifests/")
     parser.add_argument("--out", required=True, help="derived-data root; the build is written to <out>/<build-id>/")
     parser.add_argument("--mount-uuid", required=True, help="filesystem UUID that must back both --capture and --out")
@@ -492,6 +513,7 @@ def main():
     parser.add_argument("--reserve-gib", type=float, default=150, help="stop if SSD free space would fall below this")
     parser.add_argument("--memory-gib", type=int, default=8, help="total DuckDB memory limit, split across --jobs; sorts spill to <out>/<build-id>/tmp")
     parser.add_argument("--jobs", type=int, default=1, help="tables built in parallel (separate processes)")
+    parser.add_argument("--resume", action="store_true", help="continue an existing build id; keeps its finished ok tables")
     args = parser.parse_args()
     if not args.pids and not args.pids_file:
         parser.error("--pids or --pids-file is required")
@@ -499,7 +521,7 @@ def main():
         ([p.strip() for p in Path(args.pids_file).read_text().split() if p.strip()] if args.pids_file else [])
     args.pids = list(dict.fromkeys(listed))  # a PID listed twice would be built twice and duplicate its catalogue rows
     try:
-        return run(args)
+        return run(args, **run_options)
     except StorageStop as exc:
         print(f"stopped: {exc}", file=sys.stderr)
         return 3

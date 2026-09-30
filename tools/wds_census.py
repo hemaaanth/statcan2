@@ -14,15 +14,10 @@ Example:
 
 from __future__ import annotations
 
-import argparse
 import csv
-import datetime as dt
 import io
 import json
-import multiprocessing
-import platform
 import re
-import shutil
 import sys
 import time
 import zipfile
@@ -36,9 +31,9 @@ import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import wds_build as wb  # noqa: E402
-from wds_build import (BATCH_ROWS, CATALOGUE_ORDER, CATALOGUE_SCHEMAS, MAX_DIMS, META_TABLES, NUMBER,  # noqa: E402
-                       OBS_SCHEMA, TableError, copy_parquet, inventory_tables, parse_int, sha256_file)
-from wds_download import Drive, StorageStop, utc_now  # noqa: E402
+from wds_build import (BATCH_ROWS, MAX_DIMS, META_TABLES, NUMBER, OBS_SCHEMA, TableError,  # noqa: E402
+                       copy_parquet, parse_int, sha256_file)
+from wds_download import StorageStop  # noqa: E402
 
 FAMILY = "census_2021"
 SUBJECT_HEADER = re.compile(r'^"?Subject Code"?,', re.M)
@@ -296,91 +291,14 @@ def _worker_build(pid):
         return pid, {"status": "error", "errors": [str(exc)], "warnings": [], "seconds": 0}, {}
 
 
-def run(args):
-    """wds_build.run with the Census worker and "family" in the manifest."""
-    capture = Path(args.capture)
-    Drive(capture, args.mount_uuid, reserve=0)
-    out = Path(args.out) / args.build_id
-    drive = Drive(out, args.mount_uuid, int(args.reserve_gib * 1024**3))
-    if out.exists():
-        raise StorageStop(f"build directory exists: {out}")
-    inventory_path = capture / "inventory.json"
-    records = json.loads(inventory_path.read_text())
-    tables = inventory_tables(records)
-    tables.update({name: [] for name in ("cube_meta", *META_TABLES)})
-    known = {row["pid"] for row in tables["cube"]}
-    unknown = [pid for pid in args.pids if pid not in known]
-    if unknown:
-        raise StorageStop(f"PIDs not in the capture inventory: {unknown}")
-    not_census = [pid for pid in args.pids if not pid.startswith("98")]
-    if not_census:
-        raise StorageStop(f"not Census PIDs (98…): {not_census}")
-
-    for sub in ("catalogue", "obs", "tmp"):
-        drive.mkdir(out / sub)
-    zip_bytes = {pid: (capture / "zips" / f"{pid}-en.zip").stat().st_size if (capture / "zips" / f"{pid}-en.zip").exists() else 0
-                 for pid in args.pids}
-    order = sorted(args.pids, key=lambda p: -zip_bytes[p])
-    reports = {}
-    memory = max(1, args.memory_gib // args.jobs)
-    with multiprocessing.get_context("forkserver").Pool(args.jobs, wb._worker_init,
-                                                        (capture, out, args.mount_uuid, drive.reserve, memory)) as pool:
-        for i, (pid, report, rows) in enumerate(pool.imap_unordered(_worker_build, order), 1):
-            reports[pid] = report
-            for name, items in rows.items():
-                tables[name].extend(items)
-            print(f"[{i}/{len(order)}] {pid} {report['status']} rows={report.get('row_count')} {report['seconds']}s "
-                  f"{'; '.join(report['errors'])}", flush=True)
-    con = duckdb.connect()
-    con.execute(f"SET temp_directory = '{(out / 'tmp').as_posix()}'")
-    con.execute(f"SET memory_limit = '{args.memory_gib}GB'")
-
-    files = {}
-    for name, rows in tables.items():
-        table = pa.Table.from_pylist(rows, schema=CATALOGUE_SCHEMAS[name])
-        con.register("catalogue_table", table)
-        path = out / "catalogue" / f"{name}.parquet"
-        files[path.relative_to(out).as_posix()] = {"rows": len(rows),
-                                                   **copy_parquet(con, drive, f"SELECT * FROM catalogue_table ORDER BY {CATALOGUE_ORDER[name]}", path)}
-        con.unregister("catalogue_table")
-    con.close()
-    shutil.rmtree(out / "tmp")
-
-    manifest = {
-        "build_id": args.build_id, "built_at_utc": utc_now(), "family": FAMILY, "capture_dir": str(capture),
-        "capture_id": capture.name, "language": "en",
-        "inventory": {"path": str(inventory_path), "sha256": sha256_file(inventory_path), "records": len(records)},
-        "tool": {"script": "tools/wds_census.py", "python": platform.python_version(), "duckdb": duckdb.__version__,
-                 "pyarrow": pa.__version__},
-        "catalogue": files, "tables": reports,
-        "summary": Counter(r["status"] for r in reports.values()),
-    }
-    drive.atomic_json(out / "build_manifest.json", manifest)
-    print(f"Build {args.build_id}: {dict(manifest['summary'])} -> {out}")
-    return 0 if manifest["summary"].get("error", 0) == 0 else 2
+def not_census(pids):
+    others = [pid for pid in pids if not pid.startswith("98")]
+    if others:
+        raise StorageStop(f"not Census PIDs (98…): {others}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--capture", required=True, help="capture directory holding inventory.json, zips/, manifests/")
-    parser.add_argument("--out", required=True, help="derived-data root; the build is written to <out>/<build-id>/")
-    parser.add_argument("--mount-uuid", required=True, help="filesystem UUID that must back both --capture and --out")
-    parser.add_argument("--pids", help="comma-separated PIDs to build")
-    parser.add_argument("--pids-file", help="file with one PID per line (alternative to --pids)")
-    parser.add_argument("--build-id", default=dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
-    parser.add_argument("--reserve-gib", type=float, default=150, help="stop if SSD free space would fall below this")
-    parser.add_argument("--memory-gib", type=int, default=8, help="total DuckDB memory limit, split across --jobs; sorts spill to <out>/<build-id>/tmp")
-    parser.add_argument("--jobs", type=int, default=1, help="tables built in parallel (separate processes)")
-    args = parser.parse_args()
-    if not args.pids and not args.pids_file:
-        parser.error("--pids or --pids-file is required")
-    args.pids = [p for p in (args.pids or "").split(",") if p] + \
-        ([p.strip() for p in Path(args.pids_file).read_text().split() if p.strip()] if args.pids_file else [])
-    try:
-        return run(args)
-    except StorageStop as exc:
-        print(f"stopped: {exc}", file=sys.stderr)
-        return 3
+    return wb.main(__doc__, worker=_worker_build, family=FAMILY, script="tools/wds_census.py", pid_check=not_census)
 
 
 if __name__ == "__main__":
