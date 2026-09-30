@@ -175,3 +175,107 @@ Both runs took about 187 s (4 GB, 2 threads, while the 4-worker full Clean build
 - Unit codes: 42 in `obs`, all in `unit_family.csv`. `family = other` only for 301 `Vehicle-kilometres`.
 - Warnings: the Clean `v0` catalogue holds 10100139's metadata twice (40 member, 2 dimension, 1 note duplicate rows, dropped), and 916 geography members have no place. No series changes unit, scale, decimals, terminated flag, DGUID, or coordinate between rows. Series sums equal the Clean row counts.
 - Spot checks: `Ontario` is a member in 47 tables; all map to schema `0002`, `geo_code` `35` (`2011A000235`, `2016A000235`, `2021A000235` by DGUID; `code:0002:35` by name in 8 tables). 10100004 (quarterly, `YYYY-MM`) has 354 series, all `quarter`, 1978-04-01 to 2026-06-30. 18100006 (CPI) has 11 series, all `uom_code` 17 (`2002=100`), `unit_family = index`, `month`.
+
+## Census layout
+
+[`tools/wds_census.py`](tools/wds_census.py) builds the 525 Census tables (PIDs `98…`). It has the same command line, safety checks (UUID, reserve, read-only ZIPs), output contract, obs schema, sort order, ZSTD and row-group settings as `wds_build.py`, and imports its metadata parser, schemas, and worker setup. The manifest adds `"family": "census_2021"` at the top level. PIDs that do not start with `98` are refused.
+
+```bash
+.venv/bin/python -B tools/wds_census.py \
+  --capture /run/media/hemanth/Kingston/statcan-wds/baseline \
+  --out /run/media/hemanth/Kingston/statcan-derived \
+  --mount-uuid 72D0-2131 --pids 98100034,98100001 --jobs 1
+.venv/bin/python -B -m unittest tools.test_wds_census
+```
+
+### Layout as observed
+
+Evidence: the observation header and metadata of all 525 ZIPs; every row of the 194 smallest (ZIP under 5 MB: 1.95 GB of CSV, 98.1 M cells); full builds of 98100456 (medium) and 98100404 (largest ZIP).
+
+- Same two ZIP members as ordinary tables.
+- Metadata uses the 2020–2021 writer columns (`Universe` and `Variable List` on the Cube row, `Dimension Correction Notes`, `Member Correction Notes`, `Member Geo Attribute Keys`). **No file has a Subject block** (the inventory `subjectCode` is null for all 525 too), so `wds_census.read_metadata` accepts a missing Subject block and `catalogue/subject` stays empty. The Corrections header is always empty and is followed directly by a member-attribute block, which holds geography attributes only (`ALT_GEO_CODE`, `GEO_LEVEL_DESC`, `DGUID`, `DQF_CODE`, `TNR_SHORT_FORM` …).
+- Observation header, all 525 files: `REF_DATE, GEO, DGUID, <names of dimensions 2..N-1>, Coordinate`, then one pair per member of dimension N: a value column, then `Symbol` (507 files) or `Symbols` (18). Dimension counts 2 to 9.
+- Value column names: `<dimension N name>:<member name>[<member ID>]` in 505 files; `<dimension N name>: <member name> [<member ID>]` in 18; both in 2. 98100017 adds the member's note ID: `…, count (9) [3]`, where member 3 has `Member Notes` = `9`. Member names can end in a space (98100085, 98100230). Rule: the ID is the trailing `[digits]`; the text before it must start with `<dimension N name>:` and the rest, trimmed, must equal the trimmed member name or `name (member notes)`. Otherwise the table fails.
+- `Coordinate` holds the member IDs of dimensions 1..N-1. Value column member IDs ascend in all 525 headers. Rows ascend strictly by coordinate in every file read in full.
+- Every file ends with two blank lines. They are accepted only at the end.
+- `REF_DATE` is `2021` in every row read. `DGUID` was never empty in the 194 files.
+- 98100314, 98100378, and 98100379 write one label with a newline inside the quotes (`"95% confidence interval upper bound, Count\n"`) on every row. Labels that match only after removing double quotes and surrounding whitespace are accepted with a warning, like the ordinary reader's quote rule.
+
+### Unpivot rule
+
+One output row per (CSV row, value column), in the ordinary obs schema:
+
+| Column | Census source |
+|---|---|
+| `coordinate` | `Coordinate` + `.` + member ID from the value column header (`1.1.1.1.1.3`), so `(pid, coordinate, ref_date)` stays unique |
+| `member_id_1..N-1`, `member_id_N` | `Coordinate` parts; the header member ID |
+| `row_index` | CSV data row, repeated across the row's value columns |
+| `ref_date`, `dguid` | as in the row |
+| `value`, `value_num` | the value cell; same numeric rule as ordinary tables |
+| `status`, `symbol` | the Symbol cell, split as below |
+| `vector` | `''`: Census files have no vector. `duplicate_vector_ref_date` is null. |
+| `terminated` | `''`: no such column |
+| `uom`, `scalar_factor` / `uom_id`, `scalar_id`, `decimals` | `''` / null: see Units |
+
+All ordinary checks apply: header names against metadata, labels against member names (with the `[code]` and quote rules), coordinate part count (N−1), integer IDs, numeric `VALUE`, codes against the file's own legend, row count of the written file. Two checks are Census-specific:
+
+- **Order instead of a sort.** Because rows and value columns arrive in member-ID order, the output is already in `member_id_1..9, ref_date, row_index` order. The reader fails a table whose coordinates do not strictly ascend, and nothing is sorted. The obs `COPY` runs on one DuckDB thread: without a sort, a parallel writer cut row groups at different rows in two runs of 98100456.
+- **Duplicate check after writing** reads the written file's member IDs and fails the table unless every row is strictly above the previous one. That proves both the order and that `(coordinate, ref_date)` has no duplicate, so `duplicate_coordinate_ref_date` is always 0 in an `ok` table. The ordinary `GROUP BY coordinate, ref_date` took 343 s of a 456 s build on 98100456; this check takes 5 s.
+
+### What `Symbol` holds
+
+Status and symbol codes, from the same 14-code legend as ordinary tables (identical in all 525 files). Counts over the 194 fully read files:
+
+| Cell | Cells | Value in those cells | Legend meaning |
+|---|---:|---|---|
+| empty | 83,584,376 | numeric | — |
+| `...` | 10,235,568 | `0` in 10,233,857, blank in 1,711 | not applicable |
+| `x` | 4,288,678 | always blank | suppressed (confidentiality) |
+| `r` | 6,548 (11 tables) | numeric | revised |
+| `..` | 3,373 | always blank | not available |
+| `r,E` | 31 (3 tables) | numeric | revised + use with caution |
+| `E` | 28 | numeric in 26, blank in 2 | use with caution |
+
+98100456 adds 30.0 M `...` and 6.7 M `x`; 98100404 has no codes at all. Every code was in the file's legend.
+
+The cell mixes two WDS code sets: `p` and `r` are in the `symbol` code set, the rest in `status`. Ordinary tables keep them apart (`STATUS` had `..`, `x`, `E`, `F`, `A`–`D`, `0s`; `SYMBOL` had `p`, `r`). So the reader splits the cell on `,`: `p`/`r` go to `symbol`, everything else to `status` (`r,E` → status `E`, symbol `r`). Two codes of one kind would be kept comma-joined; not seen. **`...` usually comes with `VALUE` `0`**: that zero means "not applicable", not a count of zero. Use `status`.
+
+### Units
+
+Census ZIPs carry no unit. There are no `UOM`, `UOM_ID`, `SCALAR_FACTOR`, `SCALAR_ID`, or `DECIMALS` columns; the Members block has no unit column; the attribute block is geography only. The inventory marks exactly one dimension per Census table `hasUOM` (the last dimension in 278 tables, another in 247), so units belong to members of that dimension, and today they are visible only in member names (`Population, count`, `…, intercensal growth (percent)`, a `Statistics` dimension with `Count` and `95% confidence interval lower bound, Count`). The reader writes `uom` and `scalar_factor` as `''` and `uom_id`, `scalar_id`, `decimals` as null. The WDS `getCubeMetadata` member `memberUomCode` would fill them; it is not captured.
+
+### Results (builds `census-s2a`, `census-s2b`, `census-big1`)
+
+Measured with `--jobs 1 --memory-gib 2` while the 4-worker full WDS build ran (load average 22–42 on 16 cores).
+
+| PID | Dims | Rows | ZIP bytes | Parquet bytes | Parquet / ZIP | Seconds | Rows/s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 98100034 | 3 | 210 | 4,410 | 5,991 | 1.36 | 0.05 | |
+| 98100039 | 3 | 378 | 4,622 | 6,951 | 1.50 | 0.07 | |
+| 98100036 | 3 | 336 | 4,798 | 6,792 | 1.42 | 0.27 | |
+| 98100001 | 2 | 154 | 5,611 | 5,599 | 1.00 | 0.12 | |
+| 98100047 | 3 | 504 | 5,990 | 7,568 | 1.26 | 0.12 | |
+| 98100456 | 6 | 56,839,860 | 102,604,595 | 75,732,301 | 0.74 | 124–140 | 407,000–460,000 |
+| 98100404 | 6 | 551,712,000 | 3,304,669,435 | 619,047,607 | 0.19 | 2,552 | 216,000 |
+
+- `census-s2a` and `census-s2b` matched on all 18 Parquet hashes (12 catalogue, 6 obs).
+- Rows/s depends on value columns per CSV row (5 in 98100456, 3 in 98100404). CSV bytes/s is steadier: 17–19 MB/s and 14.8 MB/s. Worker peak RSS was 2.4 GB on 98100404.
+- In 98100456, `coordinate` is 37.7 MB of the 75.7 MB file and `row_index` 13.1 MB. Each Census coordinate has one row, so the string does not compress like in time series. Dropping it (it equals the joined `member_id_k`) would roughly halve Census Parquet; that is a contract change and is not done.
+
+### Projection for all 525
+
+Row counts per file were estimated from bytes per row in the first 4 MB of each CSV (estimate / actual on the 194 fully read files: median 1.00, range 0.97–1.76; 98100404: 0.97). Totals: 99.9 GB of ZIP, 1.73 TB of CSV, about 52.6 G output rows; the largest file is about 1.0 G rows (98100620). At the measured 15–19 MB of CSV per second per worker:
+
+- one worker: 25–32 h;
+- `--jobs 4`: about 6–8 h, if each worker keeps its rate (measured while another 4-worker build ran); the longest single table (98100404, 37.7 GB CSV) takes about 43 min, and largest-first ordering keeps it off the tail;
+- Parquet: 1.1–1.3 bytes per row, so about 60–70 GB; the tmp folder stays small because nothing is sorted;
+- memory: about 2.4 GB per worker.
+
+### Known limits
+
+- 329 of 525 files were checked only by header and metadata. Their rows may break a rule that the 196 read files did not (out-of-order rows, a new label quirk, a code outside the legend); such a table fails with an error and no Parquet.
+- No sort fallback: a file with rows out of coordinate order fails. Adding `ORDER BY` for that table (and the multi-threaded sort cost) is the fix if it ever happens.
+- Units, scale, and decimals are empty (see Units).
+- `vector` is empty, so any Normalized step keyed on `(pid, vector)` must use `(pid, coordinate)` for Census tables.
+- `...` cells with `VALUE` `0` are stored as written; `value_num` is 0.0 for them.
+- French ZIPs are not captured.
