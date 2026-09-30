@@ -1,0 +1,17 @@
+classification_code,schema,geo_code,note
+[0],0000,11124,Canada
+[00],0000,11124,Canada
+[11124],0000,11124,Canada
+[10],0002,10,Newfoundland and Labrador
+[11],0002,11,Prince Edward Island
+[12],0002,12,Nova Scotia
+[13],0002,13,New Brunswick
+[24],0002,24,Quebec
+[35],0002,35,Ontario
+[46],0002,46,Manitoba
+[47],0002,47,Saskatchewan
+[48],0002,48,Alberta
+[59],0002,59,British Columbia
+[60],0002,60,Yukon
+[61],0002,61,Northwest Territories
+[62],0002,62,Nunavut

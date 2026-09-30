@@ -85,3 +85,93 @@ Whole-batch facts: 107.6 M rows in the 66 first-pass successes; `STATUS` codes s
 Largest table so far, 24100055 (1.86 GB ZIP, 5 dimensions): 202,174,587 rows, built in 45 min at about 74,000 rows/s, 336 MB Parquet (0.18×). DuckDB's sort spilled to `tmp/` and left free space unchanged afterwards. The Python `csv` reader is the bottleneck; the largest captured ZIP (12100152, 6.9 GB) would take about 3 h at this rate. Options when that matters: run PIDs in parallel processes, or move observation parsing to DuckDB's CSV reader and keep the Python checks as SQL.
 
 Not covered: Census-layout tables (none captured yet), tables with a `Release` dimension, French ZIPs, the 2–7 GB ZIPs.
+
+## Normalized layer
+
+[`tools/wds_normalize.py`](tools/wds_normalize.py) reads one Clean build and the captured WDS code sets and writes the Normalized files described in [SCHEMA.md](SCHEMA.md). It never changes a Clean file. Output goes to `<clean-build-dir>/normalized/<build-id>/`; an existing build ID is refused. The inputs and the output must sit on the UUID-checked SSD. The tool checks the code set file against its sibling `.sha256` file and stops on a mismatch.
+
+```bash
+.venv/bin/python -B tools/wds_normalize.py \
+  --clean /run/media/hemanth/Kingston/statcan-derived/v0 \
+  --codesets /run/media/hemanth/Kingston/statcan-ref/codesets/20260930T182041Z/codeSets.json \
+  --mount-uuid 72D0-2131 --build-id n3 --memory-gib 4 --threads 2
+.venv/bin/python -B -m unittest tools.test_wds_normalize
+```
+
+DuckDB works in `<build-id>/tmp/` (a work database and spill files); the folder is deleted at the end. Observation files are read one at a time, never all at once. Output files are sorted and written by one DuckDB thread, because parallel Parquet writers cut row groups at different rows from run to run. With that, the same Clean build, code sets, `data/ref/*.csv`, and tool versions give byte-identical Parquet files.
+
+### Output contract
+
+| File | One row per | Columns and rules |
+|---|---|---|
+| `frequency`, `subject`, `survey`, `uom`, `scalar`, `status`, `symbol`, `classification_type`, `terminated` | code in `codeSets.json` | `code` (integer where StatCan gives integers, string where it gives strings: `subject`, `survey`, `status`, `symbol`), `en`, `fr`, `representation` (English display text such as `..` or `p`; null for sets without one). `securityLevel` and `wdsResponseStatus` are not written. |
+| `unit_family` | `uom_id` seen in any Clean `obs` file | `uom_code`, `family`, `symbol`, `base_year`, `note`, taken from the hand-kept [`data/ref/unit_family.csv`](data/ref/unit_family.csv). A code missing from the CSV gets `family = other` and a manifest warning. `base_year` is set for `YYYY constant dollars` and for single-year index bases (`Index, 2007=100`). |
+| `place` | place seen in the data | `place_id`, `dguid`, `vintage`, `geo_type`, `schema`, `geo_code`, `name_en`, `level`, `parent_place_id` (see below) |
+| `member_place` | member of dimension 1 (the `GEO` dimension) of every built table | `pid`, `dimension_id` (always 1), `member_id`, `place_id`, `match` (`dguid`, `code`, `name`, `none`), `note` (why earlier rules did not apply) |
+| `series` | `(pid, vector)` | `coordinate`, `member_id_1..9`, `label_1..9` (member names), `place_id` (via `member_place` for `member_id_1`), `uom_code`, `unit_family`, `scalar_code`, `decimals`, `period_kind`, `period_min` (earliest `period_start`), `period_max` (latest `period_end`), `n_obs`, `n_published` (non-blank `value`), `terminated` (boolean: any row has `t`), `last_status` (`status` at the latest `ref_date`). Sorted by `pid, member_id_1..9`. |
+| `table` | PID in the Clean `cube` table (all inventory PIDs, built or not) | all `cube` columns, then `kind` (`time_series` when `cube_start_date` differs from `cube_end_date`, else `snapshot`), `family` (`census_2021` for PIDs starting `98`, else `wds`), `frequency_en`, `subject_en[]`, `survey_en[]` (code-set labels in inventory order), `queryable` (Clean has an `obs` file), `clean_build_id`, `row_count`, `series_count`, `period_min`, `period_max`, `unit_families[]`, `place_levels[]`, `n_places_mapped`, `n_places_unmapped` (all from `series` and `member_place`; null when not built), `search_text` (title, dimension names, member names, and notes with HTML tags removed, joined by ` \| `) |
+| `normalize_manifest.json` | build | build ID, Clean build ID and `build_manifest.json` SHA-256, code set path and SHA-256, SHA-256 of both `data/ref` CSVs, tool versions, per-file rows/bytes/SHA-256, `stats` (place `match` counts, `period_kind` counts by series and by observation, places whose parent differs between tables), `warnings` |
+
+Warnings the build records instead of failing: exact duplicate rows in the Clean catalogue (dropped), unit codes missing from `unit_family.csv` or from the `uom` code set, frequency/subject/survey codes missing from the code sets, `ref_date` text with an unknown shape (listed by PID and shape), series whose unit, scale, decimals, terminated flag, DGUID, coordinate, or period kind changes between rows, geography members without a place, and a PID whose observation count differs from the Clean manifest. A member key with two different rows in the Clean member table stops the build, because it would duplicate series rows.
+
+### Period rules
+
+`period(ref_date, frequency_code)` is a pure function. The text gives the start; the table frequency only lengthens the end where the text shape is ambiguous.
+
+| `ref_date` shape | Frequency | `period_start` – `period_end` | `period_kind` |
+|---|---|---|---|
+| `YYYY` | any | Jan 1 – Dec 31 | `year` |
+| `YYYY-MM` | 9 Quarterly, 19 Occasional Quarterly | first of month – end of third month | `quarter` |
+| `YYYY-MM` | 11 Semi-annual | first of month – end of sixth month | `half_year` |
+| `YYYY-MM` | any other | the month | `month` |
+| `YYYY-MM-DD` | 2 Weekly | the date – date + 6 days | `week` |
+| `YYYY-MM-DD` | any other | the date | `day` |
+| `YYYY/YYYY`, years one apart | any | Apr 1 – Mar 31 of the second year | `fiscal_year` |
+| `YYYY/YYYY`, years further apart | any | Jan 1 of the first year – Dec 31 of the second | `multi_year` |
+| anything else, or an invalid date | any | null – null | `other`, plus a manifest warning |
+
+"Every N years" tables write `YYYY` and report one reference year, so they get `year`, not an N-year span. "Occasional Daily" 17100009 writes quarterly `YYYY-MM-DD` dates; they are days. *To verify:*
+
+- `fiscal_year` bounds. Of the 5 `YYYY/YYYY` tables in `v0`, 27100029 says "fiscal year" and 21100137 says "business year ending between April 1st and March 31st"; 17100006 (deaths) and 17100051 (births, "July 1 to June 30") use demographic years, so April–March is wrong for them. A per-table override is needed; it is not built.
+- `week`: 10100073 dates are Wednesdays; whether the date starts or ends the week is not stated.
+- `multi_year`: 13100457 ("four-year period estimates", `2007/2010`) is read as calendar years.
+- Frequencies not seen in `v0`: 4 Biweekly and 7 Bimonthly fall to `day` / `month`.
+
+### Place mapping
+
+Only dimension 1 is mapped. It is `Geography` in 103 of 105 `v0` tables; the others are `Geography, place of residence` (13100756) and `Country of visit` (24100081). The rules run in the SCHEMA.md order, per member:
+
+1. **`dguid`**: the member's observation rows carry exactly one `DGUID`, it matches `^\d{4}[AS]\d{4}\S+$`, and, when the member has a bracketed classification code, the code equals the parsed `geo_code`. `place_id` is the DGUID. The code check rejects `2021A11124` and `2016A11124` (11100053, 33100094): they fit the pattern but parse as schema `1112`, code `4`, while the member code is `[11124]`.
+2. **`code`**: the member's classification code text is listed in [`data/ref/place_alias.csv`](data/ref/place_alias.csv) (`[0]`, `[00]`, `[11124]` → Canada; the 13 two-digit province and territory codes). `place_id = code:<schema>:<geo_code>`, for example `code:0002:35`; `vintage`, `dguid`, `geo_type` are null.
+3. **`name`**: the member name equals a name of a country or province place found by rules 1–2, and all such names point to one `(schema, geo_code)`. `place_id` is the `code:` place for it.
+4. **`none`**: `place_id` null; `note` lists why each rule failed.
+
+Code length is not used to infer a schema, although SCHEMA.md suggests it. In `v0` the code `[3501]` means four places: Champlain District Health Council, Erie St. Clair LHIN, Southern Ontario agricultural region, and census division Stormont, Dundas and Glengarry. The 4-digit codes on non-DGUID members are 470 members of 5 health tables, all health regions, not census divisions. 5-digit codes mix peer groups and "Non CMA-CA" areas, and 7-digit codes serve both CSDs and CCSs. Add a code to `place_alias.csv` only when its meaning is certain.
+
+`place.name_en` is the most common member name among members mapped to the place (ties: alphabetical first). `level` is `country` for schema `0000`, `province` for `0002`, and `schema:<code>` for every other schema until the Geographic Attribute File (92-151-X) is captured; that file would give level names, official names, and the parent chain below province. `parent_place_id` comes from `parent_member_id` when both member and parent map; when tables disagree (Nova Scotia's parent is Canada in most tables and Atlantic in three), the most common parent wins and `stats.places_with_conflicting_parents` counts it. The same place in two vintages is two `place` rows sharing `schema` and `geo_code`; "same place, any vintage" is a query on those two columns.
+
+### Deliberately not mapped
+
+- Places below province level by name, and any code not in `place_alias.csv` (health regions, economic regions, peer groups, "Non CMA-CA" areas, foreign countries).
+- Regional aggregates without a DGUID (`Atlantic provinces`, `Canada (excluding territories)`, `Rest of Quebec`).
+- Unit scale: `value × 10^scalar` is not stored (SCHEMA.md). Unit names are never rewritten; `unit_family` only groups codes.
+- French labels beyond the code sets.
+
+### Results on `v0` (builds `n3`, `n4`)
+
+Both runs took about 187 s (4 GB, 2 threads, while the 4-worker full Clean build ran on the same SSD) and matched on all 14 Parquet hashes.
+
+| File | Rows | Bytes |
+|---|---:|---:|
+| `series` | 5,904,721 | 11,642,279 |
+| `table` | 8,271 | 732,116 |
+| `place` | 2,451 | 51,974 |
+| `member_place` | 8,280 | 20,388 |
+| `unit_family` | 42 | 1,525 |
+| code sets (9 files) | 17 / 622 / 903 / 465 / 10 / 11 / 3 / 91 / 2 | 67,814 total |
+
+- Place `match`: `dguid` 7,167, `code` 78, `name` 119, `none` 916. 1,747 of 2,451 places are schema `0502`. 66 places have parents that differ between tables.
+- `period_kind` by series (observations): `year` 5,693,201 (80.0 M), `month` 56,719 (30.8 M), `multi_year` 127,120 (254 k), `half_year` 14,353, `quarter` 6,757 (295 k), `fiscal_year` 6,512 (306 k), `day` 54 (681 k), `week` 5 (10 k). No unknown `ref_date` shape.
+- Unit codes: 42 in `obs`, all in `unit_family.csv`. `family = other` only for 301 `Vehicle-kilometres`.
+- Warnings: the Clean `v0` catalogue holds 10100139's metadata twice (40 member, 2 dimension, 1 note duplicate rows, dropped), and 916 geography members have no place. No series changes unit, scale, decimals, terminated flag, DGUID, or coordinate between rows. Series sums equal the Clean row counts.
+- Spot checks: `Ontario` is a member in 47 tables; all map to schema `0002`, `geo_code` `35` (`2011A000235`, `2016A000235`, `2021A000235` by DGUID; `code:0002:35` by name in 8 tables). 10100004 (quarterly, `YYYY-MM`) has 354 series, all `quarter`, 1978-04-01 to 2026-06-30. 18100006 (CPI) has 11 series, all `uom_code` 17 (`2002=100`), `unit_family = index`, `month`.

@@ -1,0 +1,43 @@
+uom_code,family,symbol,base_year,note
+17,index,,2002,unit name is only the base (2002=100)
+42,volume,bu,,
+51,count,,,cars
+72,volume,m3,,
+75,currency,CAD,,current dollars
+81,currency,CAD,,
+108,currency,CAD/cwt,,price per hundredweight
+113,currency,CAD/kg,,price per kilogram
+148,count,,,head of livestock
+152,time,h,,
+160,index,,,base not stated in the unit name
+164,index,,1967,
+173,index,,1992,
+181,index,,2007,
+182,index,,2008,
+187,index,,,base period 1982 to 1990
+192,mass,kg,,
+223,count,,,
+227,count,,,farms reporting
+239,percent,%,,
+242,percent,%,,
+249,count,,,persons
+254,mass,lb,,
+257,rate,,,denominator not stated in the unit name
+265,rate,,,per 100000 population
+270,rate,,,ratio
+288,mass,t,,metric tonnes
+291,mass,ton,,short or long ton not stated in the unit name
+300,count,,,
+301,other,veh-km,,vehicle distance
+303,time,wk,,
+348,index,,2012,
+350,currency,CAD,2016,constant dollars
+371,count,,,farms
+372,count,,,farm operators
+373,index,,2017,
+389,currency,CAD,2011,constant dollars
+395,rate,,,per 100000 live births
+403,index,,,base month January 2020 (202001=100)
+428,count,,,persons in thousands; the unit name carries the thousands and SCALAR_ID may add another scale
+454,index,,,base month July 2024 (202407=100)
+455,currency,CAD,2024,constant dollars
