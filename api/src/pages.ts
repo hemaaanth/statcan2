@@ -2,14 +2,34 @@ import { Hono } from "hono";
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
 import { int, observationFilter, type Config } from "./api.ts";
-import type { Row } from "./db.ts";
+import { ARCHIVED_EN, isTimeSeries, MAX_SERIES_POINTS, type Row, type Series } from "./db.ts";
 
-// Frequency labels seen in the WDS code set for codes present in the sample; unseen codes show the raw number.
-const FREQUENCY: Record<number, string> = { 1: "Daily", 6: "Monthly", 9: "Quarterly", 12: "Annual", 18: "Occasional", 21: "Occasional Daily" };
-const ARCHIVED: Record<string, string> = { "1": "archived", "2": "current" };
+// Pinned Highcharts build from a CDN; non-commercial licence applies (personal, non-profit project). SRI protects against CDN tampering.
+const HIGHCHARTS = { src: "https://cdn.jsdelivr.net/npm/highcharts@13.1.1/highcharts.js", integrity: "sha384-FXT8Mj1JsVEsCNEB3qjrU1JPYJ94Ku7uMe0eopjumL2jEkPl1O9YeAZJn+qsOFVW" };
+const MAX_CHART_SERIES = 12;
+
+/** Highcharts options for a set of series: x = raw ref_date strings as categories, y = value_num, null where blank. */
+function chartConfig(title: string, buildId: string, series: Series[]) {
+  const categories = [...new Set(series.flatMap((s) => s.points.map((p) => p[0])))].sort();
+  const distinct = (pick: (s: Series) => string) => [...new Set(series.map(pick))].join("; ");
+  return {
+    chart: { type: "line", zoomType: "x" },
+    title: { text: title },
+    subtitle: { text: `Unofficial. Gaps are values Statistics Canada did not publish, not zeros. Build ${buildId}.` },
+    xAxis: { categories, tickInterval: Math.max(1, Math.ceil(categories.length / 12)), crosshair: true },
+    yAxis: { title: { text: `Unit: ${distinct((s) => s.unit)} · Scale: ${distinct((s) => s.scale)}` } },
+    tooltip: { shared: true },
+    legend: { enabled: series.length > 1 },
+    plotOptions: { series: { marker: { enabled: categories.length < 60 }, connectNulls: false, animation: false } },
+    series: series.map((s) => {
+      const byDate = new Map(s.points.map((p) => [p[0], p[1]]));
+      return { name: s.name, data: categories.map((c) => byDate.get(c) ?? null) };
+    }),
+  };
+}
 
 const CSS = `
-body{font:15px/1.45 system-ui,sans-serif;margin:0;color:#111}header{background:#1f2a44;color:#fff;padding:.6rem 1.2rem}
+:root{color-scheme:light}body{font:15px/1.45 system-ui,sans-serif;margin:0;color:#111}header{background:#1f2a44;color:#fff;padding:.6rem 1.2rem}
 header a{color:#fff;text-decoration:none;font-weight:600}header small{opacity:.75;margin-left:1rem}main{max-width:70rem;margin:0 auto;padding:1rem 1.2rem}
 table{border-collapse:collapse;width:100%;font-size:14px}th,td{border-bottom:1px solid #ddd;padding:.3rem .5rem;text-align:left;vertical-align:top}
 th{background:#f3f4f6}.badge{display:inline-block;font-size:12px;padding:0 .4rem;border-radius:3px;background:#e5e7eb}.badge.ok{background:#d1fae5}
@@ -58,8 +78,8 @@ export function pageRoutes({ db, captureDir }: Config) {
       ${rows.map((r) => html`<tr>
         <td><a href="/tables/${r.pid}">${r.pid}</a></td>
         <td>${r.title_en} ${r.queryable ? html`<span class="badge ok">queryable</span>` : ""}</td>
-        <td>${FREQUENCY[r.frequency_code as number] ?? `code ${r.frequency_code}`}</td>
-        <td>${ARCHIVED[r.archived as string] ?? r.archived}</td>
+        <td>${r.frequency_en ?? `code ${r.frequency_code}`}</td>
+        <td>${ARCHIVED_EN[r.archived as string] ?? r.archived}</td>
         <td class="num">${r.dimension_count}</td>
         <td>${String(r.cube_start_date).slice(0, 10)} – ${String(r.cube_end_date).slice(0, 10)}</td>
         <td class="muted">${["title", "dimension", "member", "note"].filter((f) => (r[`${f}_hits`] as number) > 0).join(", ")}</td>
@@ -76,8 +96,8 @@ export function pageRoutes({ db, captureDir }: Config) {
     return c.html(layout(`${t.pid}`, buildId, html`
       <h1>${cube.title_en}</h1>
       <p><span class="badge">PID ${t.pid}</span> ${cube.cansim_id ? html`<span class="badge">CANSIM ${cube.cansim_id}</span>` : ""}
-        <span class="badge">${ARCHIVED[cube.archived as string] ?? cube.archived}</span>
-        <span class="badge">${t.meta?.frequency ?? FREQUENCY[cube.frequency_code as number] ?? `frequency code ${cube.frequency_code}`}</span>
+        <span class="badge">${ARCHIVED_EN[cube.archived as string] ?? cube.archived}</span>
+        <span class="badge">${cube.frequency_en ?? t.meta?.frequency ?? `frequency code ${cube.frequency_code}`}</span>
         <span class="badge">${String(cube.cube_start_date).slice(0, 10)} – ${String(cube.cube_end_date).slice(0, 10)}</span>
         ${build?.status === "ok" ? html`<span class="badge ok">queryable · ${(build.row_count ?? 0).toLocaleString()} rows</span>` : build ? html`<span class="badge err">build failed</span>` : html`<span class="badge">not built</span>`}</p>
       <p>
@@ -104,7 +124,8 @@ export function pageRoutes({ db, captureDir }: Config) {
         ${t.corrections.map((r) => html`<tr><td>${r.correction_date}</td><td><pre>${r.correction_note}</pre></td></tr>`)}
         ${t.corrections.length ? "" : t.inventory_corrections.map((r) => html`<tr><td>${String(r.correction_date).slice(0, 10)}</td><td><pre>${r.note_en}</pre></td></tr>`)}</table>` : ""}
       ${t.symbols.length ? html`<h2>Symbols and status codes</h2><table>${t.symbols.map((s) => html`<tr><td><code>${s.symbol}</code></td><td>${s.description}</td></tr>`)}</table>` : ""}
-      ${t.surveys.length ? html`<p class="muted">Survey: ${t.surveys.map((s) => `${s.survey_name} (${s.survey_code})`).join("; ")}. Subject: ${t.subjects.map((s) => `${s.subject_name} (${s.subject_code})`).join("; ")}.</p>` : ""}
+      ${t.survey_labels.length || t.subject_labels.length ? html`<p class="muted">Survey: ${t.survey_labels.map((s) => s.survey_en ?? `code ${s.survey_code}`).join("; ") || "none listed"}.
+        Subject: ${t.subject_labels.map((s) => s.subject_en ?? `code ${s.subject_code}`).join("; ") || "none listed"}.</p>` : ""}
 
       <h2>Provenance</h2>
       <table>
@@ -127,9 +148,20 @@ export function pageRoutes({ db, captureDir }: Config) {
     const result = (await db.observations(pid, filter))!;
     const dims = t.dimensions;
     const keep = Object.entries(query).filter(([k, v]) => v && k !== "offset").map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+    // A chart needs a time series and few enough lines to read; the series query ignores paging.
+    const timeSeries = isTimeSeries(t.cube);
+    const lines = timeSeries ? await db.series(pid, filter, MAX_CHART_SERIES) : undefined;
+    const chart = lines?.kind === "ok" && lines.series.length
+      ? html`<div id="chart" class="highcharts-light" style="height:420px;margin:1rem 0"></div>
+        <script type="application/json" id="chart-config">${raw(JSON.stringify(chartConfig(t.cube.title_en as string, buildId, lines.series)).replaceAll("<", "\\u003c"))}</script>
+        <script src="${HIGHCHARTS.src}" integrity="${HIGHCHARTS.integrity}" crossorigin="anonymous"></script>
+        <script>{const el=document.getElementById("chart");if(window.Highcharts)Highcharts.chart(el,JSON.parse(document.getElementById("chart-config").textContent));else el.textContent="The chart library did not load.";}</script>
+        <p class="muted">Chart: <a href="https://www.highcharts.com/" rel="external">Highcharts</a>, non-commercial use. <a href="/api/v1/tables/${pid}/series?${raw(keep)}">Same lines as JSON</a>.</p>`
+      : timeSeries && lines?.kind !== "ok" ? html`<p class="muted">A chart appears when the filter matches at most ${MAX_CHART_SERIES} series and ${MAX_SERIES_POINTS.toLocaleString()} points.</p>` : "";
     return c.html(layout(`${pid} observations`, buildId, html`
       <h1><a href="/tables/${pid}">${t.cube.title_en}</a></h1>
-      <p class="muted">${result.total.toLocaleString()} rows match. Raw values and status codes are shown as published; blank value means nothing was published. <a href="/api/v1/tables/${pid}/observations?${raw(keep)}">Same query as JSON</a>.</p>
+      <p class="muted">${result.total.toLocaleString()} rows match. Raw values and status codes are shown as published; blank value means nothing was published, not zero. <a href="/api/v1/tables/${pid}/observations?${raw(keep)}">Same query as JSON</a>.</p>
+      ${chart}
       <form class="filters" method="get">
         ${dims.map((d, i) => html`<label>${d.dimension_name}
           ${d.members.length <= 300
@@ -144,7 +176,7 @@ export function pageRoutes({ db, captureDir }: Config) {
       ${pager(`/tables/${pid}/observations?${keep}`, result.total, result.limit, result.offset)}
       <table><tr><th>ref_date</th>${dims.map((d) => html`<th>${d.dimension_name}</th>`)}<th>value</th><th>status</th><th>symbol</th><th>unit</th><th>scale</th><th>vector</th><th>coordinate</th></tr>
       ${result.rows.map((r: Row) => html`<tr><td>${r.ref_date}</td>${dims.map((_, i) => html`<td>${r[`label_${i + 1}`]}</td>`)}
-        <td class="num">${r.value}</td><td>${r.status}</td><td>${r.symbol}</td><td>${r.uom}</td><td>${r.scalar_factor}</td><td>${r.vector}</td><td>${r.coordinate}</td></tr>`)}
+        <td class="num">${r.value}</td><td title="${r.status_en ?? ""}">${r.status}</td><td title="${r.symbol_en ?? ""}">${r.symbol}</td><td>${r.uom}</td><td>${r.scalar_factor}</td><td>${r.vector}</td><td>${r.coordinate}</td></tr>`)}
       </table>`));
   });
 

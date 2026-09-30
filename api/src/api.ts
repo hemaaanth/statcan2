@@ -2,7 +2,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { Hono } from "hono";
-import { Db, MAX_DIMS, MAX_LIMIT } from "./db.ts";
+import { Db, MAX_DIMS, MAX_LIMIT, MAX_SERIES } from "./db.ts";
 import { openapi } from "./openapi.ts";
 
 export interface Config {
@@ -46,7 +46,7 @@ export function apiRoutes({ db, captureDir }: Config) {
   api.get("/openapi.json", (c) => c.json(openapi));
 
   api.get("/build", (c) => c.json({
-    ...provenance, built_at_utc: m.built_at_utc, inventory: m.inventory, tool: m.tool, summary: m.summary,
+    ...provenance, built_at_utc: m.built_at_utc, inventory: m.inventory, code_sets: db.codeSets, tool: m.tool, summary: m.summary,
     queryable_tables: Object.entries(m.tables).filter(([, t]) => t.status === "ok").map(([pid]) => pid),
     failed_tables: Object.fromEntries(Object.entries(m.tables).filter(([, t]) => t.status !== "ok").map(([pid, t]) => [pid, t.errors])),
   }));
@@ -85,6 +85,22 @@ export function apiRoutes({ db, captureDir }: Config) {
     const result = await db.observations(pid, filter);
     return c.json({ ...provenance, pid, source_sha256: report.source_sha256, parquet_sha256: report.parquet?.sha256,
       filter: { from: filter.from, to: filter.to, vector: filter.vector, members: filter.members.slice(0, report.dims) }, ...result });
+  });
+
+  api.get("/tables/:pid/series", async (c) => {
+    const pid = c.req.param("pid");
+    const report = m.tables[pid];
+    if (report?.status !== "ok") {
+      return c.json({ error: report ? "table failed the build" : "table not built", ...provenance, build: report ?? null }, report ? 409 : 404);
+    }
+    const filter = observationFilter(c.req.query());
+    if (filter.members.some((v) => v !== undefined && Number.isNaN(v))) return c.json({ error: "m1..m9 must be integers" }, 400);
+    const result = (await db.series(pid, filter, MAX_SERIES))!;
+    if (result.kind === "too_many_vectors") return c.json({ error: `more than ${result.limit} series match; add filters (m1..m9, vector, from, to)`, ...provenance }, 413);
+    if (result.kind === "too_many_points") return c.json({ error: `more than ${result.limit} points match; add filters (m1..m9, vector, from, to)`, ...provenance }, 413);
+    return c.json({ ...provenance, pid, source_sha256: report.source_sha256, parquet_sha256: report.parquet?.sha256,
+      filter: { from: filter.from, to: filter.to, vector: filter.vector, members: filter.members.slice(0, report.dims) },
+      total_points: result.total_points, series: result.series });
   });
 
   api.get("/tables/:pid/observations.parquet", (c) => {

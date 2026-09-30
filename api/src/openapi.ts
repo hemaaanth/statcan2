@@ -8,6 +8,12 @@ const provenance = {
   capture_id: { type: "string" },
   language: { type: "string", enum: ["en"] },
 };
+const filters = [
+  { name: "from", in: "query", schema: { type: "string" }, description: "Inclusive lower REF_DATE, compared as text in the table's own format" },
+  { name: "to", in: "query", schema: { type: "string" } },
+  { name: "vector", in: "query", schema: { type: "string" }, description: "Series ID, e.g. v41690914" },
+  ...Array.from({ length: 9 }, (_, i) => ({ name: `m${i + 1}`, in: "query", schema: { type: "integer" }, description: `Member ID for dimension ${i + 1}` })),
+];
 
 export const openapi = {
   openapi: "3.1.0",
@@ -31,7 +37,8 @@ export const openapi = {
         responses: { "200": { description: "Results with per-field hit counts explaining the match", content: { "application/json": { schema: {
           type: "object", properties: { ...provenance, total: { type: "integer" }, results: { type: "array", items: { type: "object", properties: {
             pid: { type: "string" }, cansim_id: { type: "string", nullable: true }, title_en: { type: "string" }, archived: { type: "string" },
-            frequency_code: { type: "integer" }, dimension_count: { type: "integer" }, queryable: { type: "boolean" },
+            frequency_code: { type: "integer" }, frequency_en: { type: "string", nullable: true, description: "Official WDS frequency label" },
+            dimension_count: { type: "integer" }, queryable: { type: "boolean" },
             title_hits: { type: "integer" }, dimension_hits: { type: "integer" }, member_hits: { type: "integer" }, note_hits: { type: "integer" } } } } } } } } } },
       },
     },
@@ -46,13 +53,16 @@ export const openapi = {
       get: {
         summary: "Filtered, paginated observations with labels",
         description: "Raw `value`, `status`, `symbol`, and `ref_date` are the official strings. `value_num` is derived. Blank `value` means nothing was published; check `status`.",
-        parameters: [pid,
-          { name: "from", in: "query", schema: { type: "string" }, description: "Inclusive lower REF_DATE, compared as text in the table's own format" },
-          { name: "to", in: "query", schema: { type: "string" } },
-          { name: "vector", in: "query", schema: { type: "string" }, description: "Series ID, e.g. v41690914" },
-          ...Array.from({ length: 9 }, (_, i) => ({ name: `m${i + 1}`, in: "query", schema: { type: "integer" }, description: `Member ID for dimension ${i + 1}` })),
-          ...paging],
-        responses: { "200": { description: "Rows sorted by member IDs, ref_date, source row" }, "404": { description: "Not built" }, "409": { description: "Failed the build; errors included" } },
+        parameters: [pid, ...filters, ...paging],
+        responses: { "200": { description: "Rows sorted by member IDs, ref_date, source row. `status_en` and `symbol_en` are official code-set descriptions next to the raw codes." }, "404": { description: "Not built" }, "409": { description: "Failed the build; errors included" } },
+      },
+    },
+    "/tables/{pid}/series": {
+      get: {
+        summary: "One series per vector for a filter, for charts",
+        description: "Each series has `vector`, `name`, `labels`, `unit`, `scale`, and `points: [ref_date, value_num, status]`. `value_num` is null when nothing was published; blank is not zero. At most 50 series and 200,000 points.",
+        parameters: [pid, ...filters],
+        responses: { "200": { description: "Series with provenance fields" }, "404": { description: "Not built" }, "409": { description: "Failed the build" }, "413": { description: "Too many series or points; add filters" } },
       },
     },
     "/tables/{pid}/observations.parquet": { get: { summary: "Whole-table Parquet for this build", parameters: [pid], responses: { "200": { description: "Parquet file; X-Content-SHA256 header" } } } },
