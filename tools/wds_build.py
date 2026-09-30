@@ -495,8 +495,9 @@ def main():
     args = parser.parse_args()
     if not args.pids and not args.pids_file:
         parser.error("--pids or --pids-file is required")
-    args.pids = [p for p in (args.pids or "").split(",") if p] + \
+    listed = [p for p in (args.pids or "").split(",") if p] + \
         ([p.strip() for p in Path(args.pids_file).read_text().split() if p.strip()] if args.pids_file else [])
+    args.pids = list(dict.fromkeys(listed))  # a PID listed twice would be built twice and duplicate its catalogue rows
     try:
         return run(args)
     except StorageStop as exc:
