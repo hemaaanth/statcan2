@@ -21,6 +21,7 @@ import datetime as dt
 import hashlib
 import io
 import json
+import multiprocessing
 import os
 import platform
 import re
@@ -346,11 +347,13 @@ def inventory_tables(records):
     return {"cube": cube, "inventory_dimension": dims, "inventory_correction": corrections}
 
 
-def build_table(con, drive, capture, pid, out, tables):
+def build_table(con, drive, capture, pid, out):
+    """Build one table. Returns (report, metadata rows by catalogue table); rows are empty unless status is ok."""
     zip_path = capture / "zips" / f"{pid}-en.zip"
     path = out / "obs" / f"{pid}.parquet"
     started = time.monotonic()
     report = {"status": "error", "source_zip": str(zip_path), "errors": [], "warnings": []}
+    tables = {name: [] for name in ("cube_meta", *META_TABLES)}
     try:
         manifest = json.loads((capture / "manifests" / f"{pid}-en.json").read_text())
         report["source_sha256"] = sha256_file(zip_path)
@@ -371,7 +374,7 @@ def build_table(con, drive, capture, pid, out, tables):
             output = copy_parquet(con, drive, f"SELECT * FROM obs_stream ORDER BY {OBS_ORDER}", path)
             con.unregister("obs_stream")
             if report["errors"]:
-                return report
+                return report, tables
             checks = con.execute(f"""
                 SELECT count(*), min(ref_date), max(ref_date),
                        (SELECT count(*) FROM (SELECT 1 FROM read_parquet('{path.as_posix()}') GROUP BY coordinate, ref_date HAVING count(*) > 1)),
@@ -391,7 +394,30 @@ def build_table(con, drive, capture, pid, out, tables):
         if report["status"] != "ok" and path.exists():
             path.unlink()
         report["seconds"] = round(time.monotonic() - started, 3)
-    return report
+    return report, tables
+
+
+_worker = {}
+
+
+def _worker_init(capture, out, uuid, reserve, memory_gib):
+    _worker["capture"] = capture
+    _worker["out"] = out
+    _worker["drive"] = Drive(out, uuid, reserve)
+    tmp = out / "tmp" / str(os.getpid())
+    tmp.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect()
+    con.execute(f"SET temp_directory = '{tmp.as_posix()}'")
+    con.execute(f"SET memory_limit = '{memory_gib}GB'")
+    con.execute("SET enable_progress_bar = false")
+    _worker["con"] = con
+
+
+def _worker_build(pid):
+    try:
+        return pid, *build_table(_worker["con"], _worker["drive"], _worker["capture"], pid, _worker["out"])
+    except StorageStop as exc:
+        return pid, {"status": "error", "errors": [str(exc)], "warnings": [], "seconds": 0}, {}
 
 
 def run(args):
@@ -412,15 +438,23 @@ def run(args):
 
     for sub in ("catalogue", "obs", "tmp"):
         drive.mkdir(out / sub)
+    # Largest ZIPs first so the multi-GB tables never become the last straggler.
+    zip_bytes = {pid: (capture / "zips" / f"{pid}-en.zip").stat().st_size if (capture / "zips" / f"{pid}-en.zip").exists() else 0
+                 for pid in args.pids}
+    order = sorted(args.pids, key=lambda p: -zip_bytes[p])
+    reports = {}
+    memory = max(1, args.memory_gib // args.jobs)
+    with multiprocessing.get_context("forkserver").Pool(args.jobs, _worker_init,
+                                                        (capture, out, args.mount_uuid, drive.reserve, memory)) as pool:
+        for i, (pid, report, rows) in enumerate(pool.imap_unordered(_worker_build, order), 1):
+            reports[pid] = report
+            for name, items in rows.items():
+                tables[name].extend(items)
+            print(f"[{i}/{len(order)}] {pid} {report['status']} rows={report.get('row_count')} {report['seconds']}s "
+                  f"{'; '.join(report['errors'])}", flush=True)
     con = duckdb.connect()
     con.execute(f"SET temp_directory = '{(out / 'tmp').as_posix()}'")
     con.execute(f"SET memory_limit = '{args.memory_gib}GB'")
-
-    reports = {}
-    for pid in args.pids:
-        reports[pid] = build_table(con, drive, capture, pid, out, tables)
-        print(f"{pid} {reports[pid]['status']} rows={reports[pid].get('row_count')} {reports[pid]['seconds']}s "
-              f"{'; '.join(reports[pid]['errors'])}", flush=True)
 
     files = {}
     for name, rows in tables.items():
@@ -452,12 +486,17 @@ def main():
     parser.add_argument("--capture", required=True, help="capture directory holding inventory.json, zips/, manifests/")
     parser.add_argument("--out", required=True, help="derived-data root; the build is written to <out>/<build-id>/")
     parser.add_argument("--mount-uuid", required=True, help="filesystem UUID that must back both --capture and --out")
-    parser.add_argument("--pids", required=True, help="comma-separated PIDs to build")
+    parser.add_argument("--pids", help="comma-separated PIDs to build")
+    parser.add_argument("--pids-file", help="file with one PID per line (alternative to --pids)")
     parser.add_argument("--build-id", default=dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     parser.add_argument("--reserve-gib", type=float, default=150, help="stop if SSD free space would fall below this")
-    parser.add_argument("--memory-gib", type=int, default=8, help="DuckDB memory limit; sorts spill to <out>/<build-id>/tmp")
+    parser.add_argument("--memory-gib", type=int, default=8, help="total DuckDB memory limit, split across --jobs; sorts spill to <out>/<build-id>/tmp")
+    parser.add_argument("--jobs", type=int, default=1, help="tables built in parallel (separate processes)")
     args = parser.parse_args()
-    args.pids = [p for p in args.pids.split(",") if p]
+    if not args.pids and not args.pids_file:
+        parser.error("--pids or --pids-file is required")
+    args.pids = [p for p in (args.pids or "").split(",") if p] + \
+        ([p.strip() for p in Path(args.pids_file).read_text().split() if p.strip()] if args.pids_file else [])
     try:
         return run(args)
     except StorageStop as exc:
