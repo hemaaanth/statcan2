@@ -141,14 +141,56 @@ def split_blocks(text):
     return blocks
 
 
+# A quoted member row: "dim","name","code","member",parent,terminated,rest (parent and terminated may be unquoted).
+# Names can hold unescaped quotes (13100441: `"very good" or "excellent"`), which a CSV reader mangles, so the fixed
+# fields around the name anchor it.
+QUOTED_MEMBER = re.compile(r'"([0-9]+)","(.*?)","([^"]*)","([0-9]+)",(?:"([0-9]*)"|([0-9]*)),(?:"(t?)"|(t?)),(.*)')
+
+
+def member_lines(lines):
+    """Member block rows as lists of cells, one physical line per row. Returns None if any row spans lines."""
+    rows = []
+    for line in lines[1:]:
+        if not line:
+            continue
+        match = QUOTED_MEMBER.fullmatch(line)  # ponytail: a name that itself contains `","<code>","<digits>",` would mis-anchor
+        if match:
+            g = match.groups()
+            cells = [g[0], g[1].replace('""', '"'), g[2], g[3], g[4] if g[4] is not None else g[5],
+                     g[6] if g[6] is not None else g[7], *next(csv.reader([g[8]]), [])]
+        elif line.count('"') % 2:
+            return None
+        else:
+            cells = next(csv.reader([line]))
+        rows.append(cells)
+    return rows
+
+
 def block_rows(name, lines):
     columns = BLOCK_COLUMNS[name]
     reader = csv.DictReader(lines, restkey="_extra", restval=None)
     unknown = [h for h in reader.fieldnames or [] if h not in columns]
     if unknown:
         raise TableError(f"metadata block {name!r} has unknown columns {unknown}")
+    if name == "member" and (cells := member_lines(lines)) is not None:
+        header = reader.fieldnames
+        notes_at = header.index("Member Notes")
+        raws = []
+        for row in cells:
+            if len(row) > len(header) and row[-1] == "":
+                row = row[:-1]  # trailing comma of the newer dialect
+            tail = row[notes_at:]
+            if len(tail) > 1 and all(c.isdigit() for c in tail):
+                # 13100001 writes note IDs unquoted with no fields after them (`,2,3,`); normally one field `2;3`
+                row = row[:notes_at] + [";".join(tail)] + [""] * (len(header) - notes_at - 1)
+            raw = dict(zip(header, row))
+            if len(row) > len(header):
+                raw["_extra"] = row[len(header):]
+            raws.append(raw)
+    else:
+        raws = list(reader)
     rows = []
-    for raw in reader:
+    for raw in raws:
         extra = raw.pop("_extra", None)
         if extra and any(extra):
             raise TableError(f"metadata block {name!r} row wider than header: {extra}")
@@ -257,8 +299,9 @@ def observation_batches(archive, pid, meta, report):
                 for k, col in enumerate(label_cols):
                     names = members.get((dim_ids[k], ids[k]))
                     if names is None or row[col] not in names:
-                        # Some observation files drop or misplace quotes inside labels; the member table is authoritative.
-                        if names is None or row[col].replace('"', "") != names[0].replace('"', ""):
+                        # Some observation files drop quotes inside labels or end one with a newline (33100441);
+                        # the member table is authoritative.
+                        if names is None or row[col].replace('"', "").rstrip() != names[0].replace('"', "").rstrip():
                             raise TableError(f"row {index}: dimension {dim_ids[k]} member {ids[k]} is "
                                              f"{names and names[0]!r}, row label {row[col]!r}")
                         quote_mangled += 1
@@ -305,7 +348,7 @@ def observation_batches(archive, pid, meta, report):
     except (UnicodeDecodeError, csv.Error) as exc:
         report["errors"].append(f"after row {rows}: {exc}")
     if quote_mangled:
-        report["warnings"].append(f"{quote_mangled} row labels matched the member name only after removing double quotes")
+        report["warnings"].append(f"{quote_mangled} row labels matched the member name only after removing double quotes or trailing whitespace")
     report.update(row_count=rows, dims=n, status_counts=dict(status), symbol_counts=dict(symbol),
                   terminated_counts=dict(terminated), blank_value_count=sum(blank_by_status.values()),
                   blank_value_by_status=dict(blank_by_status), codes_not_in_legend=sorted(unseen))

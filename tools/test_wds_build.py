@@ -129,6 +129,16 @@ class MetadataTest(unittest.TestCase):
         with self.assertRaisesRegex(build.TableError, "missing"):
             build.read_metadata(archive(NEWER_META.replace('"Survey Code","Survey Name"\n"2301","Consumer Price Index",\n', ""), OBS), PID)
 
+    def test_member_names_with_unescaped_quotes(self):
+        meta = NEWER_META.replace('"2","Food","","2","1"', '"2","Rated "very good" or "excellent", food","","2","1"')
+        food = build.read_metadata(archive(meta, OBS), PID)["member"][2]
+        self.assertEqual((food["member_name"], food["member_id"], food["parent_member_id"]), ('Rated "very good" or "excellent", food', 2, 1))
+
+    def test_member_note_ids_written_unquoted(self):
+        meta = NEWER_META.replace('"2","Food","","2","1",,,"",', '"2","Food","","2","1","",4,5,6,')
+        food = build.read_metadata(archive(meta, OBS), PID)["member"][2]
+        self.assertEqual((food["member_notes"], food["member_definitions"]), ("4;5;6", ""))
+
 
 class ObservationTest(unittest.TestCase):
     def test_rows_and_stats(self):
@@ -153,7 +163,12 @@ class ObservationTest(unittest.TestCase):
         meta = NEWER_META.replace('"2","Food","","2","1"', '"2","Food (see ""note"")","","2","1"')
         report, rows = read_all(meta, OBS.replace('"Food"', '"Food (see note")"'))
         self.assertEqual(report["errors"], [])
-        self.assertEqual(report["warnings"], ["2 row labels matched the member name only after removing double quotes"])
+        self.assertEqual(report["warnings"], ["2 row labels matched the member name only after removing double quotes or trailing whitespace"])
+
+    def test_label_with_trailing_newline_is_a_warning(self):
+        report, rows = read_all(NEWER_META, OBS.replace('"Food"', '"Food\n"'))
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(len(rows), 3)
 
     def test_header_mismatch_is_an_error(self):
         report, rows = read_all(NEWER_META, OBS.replace('"Products"', '"Product groups"'))
