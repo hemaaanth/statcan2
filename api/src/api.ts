@@ -1,8 +1,8 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { Hono } from "hono";
-import { Db, MAX_DIMS, MAX_LIMIT, MAX_SERIES } from "./db.ts";
+import { Hono, type Context } from "hono";
+import { Db, MAX_DIMS, MAX_LIMIT, MAX_SERIES, type SeriesDetailResult } from "./db.ts";
 import { openapi } from "./openapi.ts";
 
 export interface Config {
@@ -36,34 +36,84 @@ function file(filePath: string, name: string, type: string, extra: Record<string
 export function apiRoutes({ db, captureDir }: Config) {
   const api = new Hono();
   const m = db.manifest;
-  const provenance = { build_id: m.build_id, capture_id: m.capture_id, language: m.language };
-
-  api.use("*", async (c, next) => {
-    c.header("X-Statcan-Build", m.build_id);
-    await next();
-  });
+  const n = db.normalized;
+  const provenance = db.provenance;
 
   api.get("/openapi.json", (c) => c.json(openapi));
 
   api.get("/build", (c) => c.json({
     ...provenance, built_at_utc: m.built_at_utc, inventory: m.inventory, code_sets: db.codeSets, tool: m.tool, summary: m.summary,
+    normalized: { build_id: n.build_id, built_at_utc: n.built_at_utc, clean: n.clean, codesets: n.codesets, refs: n.refs, tool: n.tool, files: n.files, stats: n.stats, warnings: n.warnings.length },
     queryable_tables: Object.entries(m.tables).filter(([, t]) => t.status === "ok").map(([pid]) => pid),
     failed_tables: Object.fromEntries(Object.entries(m.tables).filter(([, t]) => t.status !== "ok").map(([pid, t]) => [pid, t.errors])),
   }));
+
+  api.get("/coverage", async (c) => c.json({ ...provenance, ...(await db.coverage(captureDir)) }));
 
   api.get("/tables", async (c) => {
     const q = c.req.query("q") ?? "";
     const limit = Math.min(int(c.req.query("limit"), 50), MAX_LIMIT);
     const offset = int(c.req.query("offset"), 0);
     const archived = c.req.query("archived");
-    if (archived && archived !== "1" && archived !== "2") return c.json({ error: "archived must be 1 or 2" }, 400);
-    const { total, rows } = await db.search(q, { archived, queryable: c.req.query("queryable") === "true", limit, offset });
+    if (archived && archived !== "1" && archived !== "2") return c.json({ error: "archived must be 1 or 2", ...provenance }, 400);
+    const kind = c.req.query("kind");
+    if (kind && kind !== "time_series" && kind !== "snapshot") return c.json({ error: "kind must be time_series or snapshot", ...provenance }, 400);
+    const family = c.req.query("family") || undefined;
+    const { total, rows } = await db.search(q, { archived, kind, family, queryable: c.req.query("queryable") === "true", limit, offset });
     return c.json({ ...provenance, q, total, limit, offset, results: rows });
+  });
+
+  api.get("/series", async (c) => {
+    const q = c.req.query("q") ?? "";
+    const pid = c.req.query("pid") || undefined;
+    if (pid && !/^[0-9]{8}$/.test(pid)) return c.json({ error: "pid must be 8 digits", ...provenance }, 400);
+    const filters = { pid, place_id: c.req.query("place_id") || undefined, unit_family: c.req.query("unit_family") || undefined };
+    const limit = Math.min(int(c.req.query("limit"), 50), MAX_LIMIT);
+    const offset = int(c.req.query("offset"), 0);
+    const { total, rows } = await db.seriesSearch({ q, ...filters, limit, offset });
+    return c.json({ ...provenance, q, ...filters, total, limit, offset, results: rows });
+  });
+
+  function seriesResponse(c: Context, pid: string, result: SeriesDetailResult) {
+    const report = m.tables[pid];
+    switch (result.kind) {
+      case "not_found": return c.json({ error: "unknown series", ...provenance }, 404);
+      case "too_many_points": return c.json({ error: `more than ${result.limit} points`, ...provenance }, 413);
+      case "inconsistent": return c.json({ error: `Normalized series row says ${result.n_obs} observations, the table has ${result.points} for this coordinate. The Normalized build keys series by vector; Census tables need it keyed by coordinate.`, ...provenance }, 409);
+      case "ok": return c.json({ ...provenance, citation: db.citation(pid), source_sha256: report.source_sha256, parquet_sha256: report.parquet?.sha256,
+        links: { table: `/api/v1/tables/${pid}`, html: `/series/${pid}/${result.series.vector || `c/${result.series.coordinate}`}` }, ...result.series });
+    }
+  }
+
+  api.get("/series/:pid/c/:coordinate", async (c) => {
+    const { pid, coordinate } = c.req.param();
+    if (!/^[0-9]+(\.[0-9]+)*$/.test(coordinate)) return c.json({ error: "coordinate must look like 1.2.3", ...provenance }, 400);
+    return seriesResponse(c, pid, await db.seriesGet(pid, { coordinate }));
+  });
+
+  api.get("/series/:pid/:vector", async (c) => {
+    const { pid, vector } = c.req.param();
+    if (!/^v[0-9]+$/.test(vector)) return c.json({ error: "vector must look like v41690915; Census series use /series/{pid}/c/{coordinate}", ...provenance }, 400);
+    return seriesResponse(c, pid, await db.seriesGet(pid, { vector }));
+  });
+
+  api.get("/places", async (c) => {
+    const q = c.req.query("q") ?? "";
+    const limit = Math.min(int(c.req.query("limit"), 50), MAX_LIMIT);
+    const offset = int(c.req.query("offset"), 0);
+    const { total, rows } = await db.places(q, limit, offset);
+    return c.json({ ...provenance, q, total, limit, offset, results: rows });
+  });
+
+  api.get("/places/:place_id", async (c) => {
+    const place = await db.place(c.req.param("place_id"));
+    if (!place) return c.json({ error: "unknown place_id", ...provenance }, 404);
+    return c.json({ ...provenance, ...place, links: { html: `/places/${encodeURIComponent(String(place.place.place_id))}` } });
   });
 
   api.get("/tables/:pid", async (c) => {
     const table = await db.table(c.req.param("pid"));
-    if (!table) return c.json({ error: "unknown PID" }, 404);
+    if (!table) return c.json({ error: "unknown PID", ...provenance }, 404);
     const pid = table.pid;
     const links: Record<string, string> = { self: `/api/v1/tables/${pid}`, html: `/tables/${pid}` };
     if (table.build?.status === "ok") {

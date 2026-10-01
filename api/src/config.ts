@@ -4,14 +4,17 @@ import { Db, requireMount } from "./db.ts";
 export async function openFromEnv() {
   const buildDir = process.env.STATCAN_BUILD;
   if (!buildDir) throw new Error("STATCAN_BUILD must point at a build directory (see BUILD.md)");
+  const normalizedDir = process.env.STATCAN_NORMALIZED;
+  if (!normalizedDir) throw new Error("STATCAN_NORMALIZED must point at a normalized/<id>/ directory of that build (see BUILD.md)");
   const codeSets = process.env.STATCAN_CODESETS;
   if (!codeSets) throw new Error("STATCAN_CODESETS must point at a captured codeSets.json (its .sha256 file must sit next to it)");
   const captureDir = process.env.STATCAN_CAPTURE || undefined;
   const uuid = process.env.STATCAN_UUID;
   if (uuid) {
     requireMount(buildDir, uuid);
+    requireMount(normalizedDir, uuid);
     requireMount(codeSets, uuid);
     if (captureDir) requireMount(captureDir, uuid);
   }
-  return { db: await Db.open(buildDir, codeSets), captureDir };
+  return { db: await Db.open(buildDir, normalizedDir, codeSets), captureDir };
 }

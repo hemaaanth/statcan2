@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { openFromEnv } from "./config.ts";
-import { isTimeSeries, MAX_DIMS, MAX_LIMIT, MAX_SERIES, type ObservationFilter } from "./db.ts";
+import { MAX_DIMS, MAX_LIMIT, MAX_SERIES, type ObservationFilter } from "./db.ts";
 
 // stdout belongs to the MCP protocol. Anything else goes to stderr.
 const { db } = await openFromEnv();
@@ -30,12 +30,12 @@ function toFilter(args: Record<string, unknown>): ObservationFilter {
 }
 
 function ok(data: Record<string, unknown>) {
-  const body = { build_id: buildId, ...data };
+  const body = { ...db.provenance, ...data };
   return { content: [{ type: "text" as const, text: JSON.stringify(body, null, 2) }], structuredContent: body };
 }
 
 function fail(message: string) {
-  return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ build_id: buildId, error: message }) }] };
+  return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ ...db.provenance, error: message }) }] };
 }
 
 /** The table must exist and be built before its observations can be read. */
@@ -44,10 +44,6 @@ function queryable(pid: string): string | undefined {
   if (!report) return `table ${pid} is not built in build ${buildId}; use get_table to read its metadata`;
   if (report.status !== "ok") return `table ${pid} failed the build: ${report.errors.join("; ")}`;
   return undefined;
-}
-
-async function titleOf(pid: string) {
-  return (await db.one("SELECT title_en FROM cube WHERE pid = $1", [pid]))?.title_en;
 }
 
 const server = new McpServer({ name: "statcan", version: "0.1.0" });
@@ -65,9 +61,34 @@ server.registerTool("search_tables", {
 }, async ({ q, archived, queryable: onlyQueryable, limit }) => {
   const { total, rows } = await db.search(q, { archived, queryable: onlyQueryable, limit: limit ?? 25, offset: 0 });
   return ok({
-    citation: `Statistics Canada Web Data Service table inventory, ${db.manifest.inventory.records} records, capture ${db.manifest.capture_id}, build ${buildId}`,
-    note: NOT_OFFICIAL, q, total, results: rows.map((r) => ({ ...r, citation: db.citation(String(r.pid), r.title_en) })),
+    citation: `Statistics Canada Web Data Service table inventory, ${db.info.size} records, capture ${db.manifest.capture_id}, build ${buildId}, normalized ${db.normalized.build_id}`,
+    note: NOT_OFFICIAL, q, total, results: rows.map((r) => ({ ...r, citation: db.citation(String(r.pid)) })),
   });
+});
+
+server.registerTool("search_series", {
+  description: `Search series (one line of a table: one vector, or one coordinate in Census tables). Every word must appear in the table title or in the series' member labels; a term like v41690915 must equal the vector. Filter by pid, place_id (from get_place), or unit_family (percent, count, currency, index, mass, time, volume, rate, other). Each result has labels, place, unit, period range, observation counts, and a citation. Read points with get_series (pid + vector). ${NOT_OFFICIAL}`,
+  inputSchema: {
+    q: z.string().describe("Search words, e.g. consumer price index food ontario; may be empty when a filter is given"),
+    pid: pidSchema.optional(),
+    place_id: z.string().optional().describe("Exact place_id, e.g. 2021A000235 or code:0002:35"),
+    unit_family: z.string().optional().describe("Unit family, e.g. percent"),
+    limit: z.number().int().min(1).max(100).optional().describe("Default 25"),
+  },
+  annotations: { title: "Search series", ...readOnly },
+}, async ({ q, pid, place_id, unit_family, limit }) => {
+  const { total, rows } = await db.seriesSearch({ q, pid, place_id, unit_family, limit: limit ?? 25, offset: 0 });
+  return ok({ note: NOT_OFFICIAL, q, total, results: rows.map((r) => ({ ...r, citation: db.citation(String(r.pid)) })) });
+});
+
+server.registerTool("get_place", {
+  description: `Get a place: its level, schema and geo_code, every vintage of it (same schema and geo_code, e.g. Ontario 2011, 2016, 2021 DGUIDs), its parent, and every table that covers it, grouped by subject, with the member ID to filter on (m1), the number of series, and a citation per table. Find place_id values with search_series results or get_table members. ${NOT_OFFICIAL}`,
+  inputSchema: { place_id: z.string().describe("place_id, e.g. 2021A000235 (a DGUID) or code:0002:35") },
+  annotations: { title: "Get place", ...readOnly },
+}, async ({ place_id }) => {
+  const place = await db.place(place_id);
+  if (!place) return fail(`unknown place_id ${place_id}`);
+  return ok({ citation: `Places from Normalized build ${db.normalized.build_id} of build ${buildId}; each table below carries its own Statistics Canada citation`, note: NOT_OFFICIAL, ...place });
 });
 
 server.registerTool("get_table", {
@@ -77,11 +98,11 @@ server.registerTool("get_table", {
 }, async ({ pid }) => {
   const table = await db.table(pid);
   if (!table) return fail(`unknown PID ${pid}`);
-  return ok({ citation: db.citation(pid, table.cube.title_en), note: NOT_OFFICIAL, queryable: table.build?.status === "ok", time_series: isTimeSeries(table.cube), ...table });
+  return ok({ citation: db.citation(pid), note: NOT_OFFICIAL, queryable: table.build?.status === "ok", time_series: table.cube.kind === "time_series", ...table });
 });
 
 server.registerTool("get_series", {
-  description: `Get time series for a filter: one series per vector, each with member labels, unit, scale, and points [ref_date, value_num, status]. At most ${MAX_SERIES} series; add filters if there are more. ${FILTERS} ${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`,
+  description: `Get time series for a filter: one series per coordinate (the vector in WDS tables), each with member labels, unit, scale, period_kind, and points [ref_date, value_num, status, period_start, period_end]. At most ${MAX_SERIES} series; add filters if there are more. ${FILTERS} ${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`,
   inputSchema: { pid: pidSchema, ...filters },
   annotations: { title: "Get series", ...readOnly },
 }, async ({ pid, ...args }) => {
@@ -91,12 +112,12 @@ server.registerTool("get_series", {
   if (result.kind === "too_many_vectors") return fail(`more than ${result.limit} series match; add filters (m1..m9, vector, from, to)`);
   if (result.kind === "too_many_points") return fail(`more than ${result.limit} points match; add filters (m1..m9, vector, from, to)`);
   const report = db.manifest.tables[pid];
-  return ok({ citation: db.citation(pid, await titleOf(pid)), note: `${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`, pid,
+  return ok({ citation: db.citation(pid), note: `${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`, pid,
     source_sha256: report.source_sha256, parquet_sha256: report.parquet?.sha256, total_points: result.total_points, series: result.series });
 });
 
 server.registerTool("get_observations", {
-  description: `Get observation rows for a filter, with member labels. Values are the raw published strings: value, status, symbol, ref_date. value_num is derived, and status_en and symbol_en explain the codes. Page with limit (max ${MAX_LIMIT}) and offset; total counts every matching row. ${FILTERS} ${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`,
+  description: `Get observation rows for a filter, with member labels, place_id for dimension 1, unit_family, and period_start, period_end, period_kind. Values are the raw published strings: value, status, symbol, ref_date. value_num is derived, and status_en and symbol_en explain the codes. Page with limit (max ${MAX_LIMIT}) and offset; total counts every matching row. ${FILTERS} ${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`,
   inputSchema: {
     pid: pidSchema, ...filters,
     limit: z.number().int().min(1).max(MAX_LIMIT).optional().describe("Rows per page, default 100"),
@@ -108,9 +129,9 @@ server.registerTool("get_observations", {
   if (problem) return fail(problem);
   const result = (await db.observations(pid, { ...toFilter(args), limit: limit ?? 100, offset: offset ?? 0 }))!;
   const report = db.manifest.tables[pid];
-  return ok({ citation: db.citation(pid, await titleOf(pid)), note: `${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`, pid,
+  return ok({ citation: db.citation(pid), note: `${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`, pid,
     source_sha256: report.source_sha256, parquet_sha256: report.parquet?.sha256, ...result });
 });
 
 await server.connect(new StdioServerTransport());
-console.error(`statcan MCP server: build ${buildId}, code sets ${db.codeSets.sha256.slice(0, 12)}, on stdio`);
+console.error(`statcan MCP server: build ${buildId}, normalized ${db.normalized.build_id}, code sets ${db.codeSets.sha256.slice(0, 12)}, on stdio`);
