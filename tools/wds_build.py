@@ -34,6 +34,7 @@ from pathlib import Path
 
 import duckdb
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from wds_download import Drive, StorageStop, utc_now  # noqa: E402
@@ -463,9 +464,22 @@ def _worker_build(pid):
         return pid, {"status": "error", "errors": [str(exc)], "warnings": [], "seconds": 0}, {}
 
 
+def save_parts(out, pid, rows):
+    """Write one table's catalogue rows to parts/<name>/<pid>.parquet, so the build never holds them all in memory
+    (7.2 M member rows for 299 Census tables exhausted a 6 GB cap when they were kept as Python dicts)."""
+    for name, items in rows.items():
+        path = out / "parts" / name / f"{pid}.parquet"
+        if items:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            pq.write_table(pa.Table.from_pylist(items, schema=CATALOGUE_SCHEMAS[name]), path.with_suffix(".tmp"))
+            os.replace(path.with_suffix(".tmp"), path)
+        elif path.exists():
+            path.unlink()
+
+
 def run(args, worker=_worker_build, family="wds", script="tools/wds_build.py", pid_check=None):
-    """Build args.pids into <out>/<build-id>/. Each finished table is saved to reports/<pid>.json at once, so a
-    killed run loses only the tables in flight; --resume keeps the saved ok tables and builds the rest."""
+    """Build args.pids into <out>/<build-id>/. Each finished table is saved at once (reports/<pid>.json and its
+    catalogue rows in parts/), so a killed run loses only the tables in flight; --resume keeps the saved ok tables."""
     capture = Path(args.capture)
     Drive(capture, args.mount_uuid, reserve=0)
     out = Path(args.out) / args.build_id
@@ -475,7 +489,6 @@ def run(args, worker=_worker_build, family="wds", script="tools/wds_build.py", p
     inventory_path = capture / "inventory.json"
     records = json.loads(inventory_path.read_text())
     tables = inventory_tables(records)
-    tables.update({name: [] for name in ("cube_meta", *META_TABLES)})
     known = {row["pid"] for row in tables["cube"]}
     unknown = [pid for pid in args.pids if pid not in known]
     if unknown:
@@ -483,23 +496,26 @@ def run(args, worker=_worker_build, family="wds", script="tools/wds_build.py", p
     if pid_check:
         pid_check(args.pids)
 
-    for sub in ("catalogue", "obs", "reports"):
+    for sub in ("catalogue", "obs", "reports", "parts"):
         drive.mkdir(out / sub)
     if (out / "tmp").exists():
         shutil.rmtree(out / "tmp")  # spill files of a killed run
     drive.mkdir(out / "tmp")
-    for partial in (out / "obs").glob("*.tmp"):
+    for partial in [*(out / "obs").glob("*.tmp"), *(out / "parts").glob("*/*.tmp")]:
         partial.unlink()
-    saved = {}
+    reports = {}
     for path in (out / "reports").glob("*.json"):
         entry = json.loads(path.read_text())
+        if "rows" in entry:  # report written before parts/ existed: move its rows out, one table at a time
+            save_parts(out, path.stem, entry.pop("rows"))
+            drive.atomic_json(path, entry)
         parquet = entry["report"].get("parquet")
         if entry["report"]["status"] == "ok" and parquet and (out / parquet["path"]).exists() \
                 and (out / parquet["path"]).stat().st_size == parquet["bytes"]:
-            saved[path.stem] = entry
+            reports[path.stem] = entry["report"]
     # Smallest ZIPs first: most tables finish early and memory stays low. Several multi-GB tables sorting at once
     # exhausted RAM on a 30 GB laptop; run those as a separate --jobs 1 build.
-    todo = [pid for pid in args.pids if pid not in saved]
+    todo = [pid for pid in args.pids if pid not in reports]
     zip_bytes = {pid: (capture / "zips" / f"{pid}-en.zip").stat().st_size if (capture / "zips" / f"{pid}-en.zip").exists() else 0
                  for pid in todo}
     order = sorted(todo, key=lambda p: (zip_bytes[p], p))
@@ -508,26 +524,33 @@ def run(args, worker=_worker_build, family="wds", script="tools/wds_build.py", p
     with multiprocessing.get_context("forkserver").Pool(args.jobs, _worker_init,
                                                         (capture, out, args.mount_uuid, drive.reserve, memory)) as pool:
         for i, (pid, report, rows) in enumerate(pool.imap_unordered(worker, order), 1):
-            saved[pid] = {"report": report, "rows": rows}
-            drive.atomic_json(out / "reports" / f"{pid}.json", saved[pid])
+            drive.check()
+            save_parts(out, pid, rows)
+            drive.atomic_json(out / "reports" / f"{pid}.json", {"report": report})
+            reports[pid] = report
             print(f"[{i}/{len(order)}] {pid} {report['status']} rows={report.get('row_count')} {report['seconds']}s "
                   f"{'; '.join(report['errors'])}", flush=True)
-    reports = {}
-    for pid in args.pids:
-        reports[pid] = saved[pid]["report"]
-        for name, items in saved[pid]["rows"].items():
-            tables[name].extend(items)
+    reports = {pid: reports[pid] for pid in args.pids}
     con = duckdb.connect()
     con.execute(f"SET temp_directory = '{(out / 'tmp').as_posix()}'")
     con.execute(f"SET memory_limit = '{args.memory_gib}GB'")
+    con.execute("SET threads = 1")  # one writer thread: row groups, and so bytes, do not depend on timing
 
     files = {}
-    for name, rows in tables.items():
-        table = pa.Table.from_pylist(rows, schema=CATALOGUE_SCHEMAS[name])
-        con.register("catalogue_table", table)
+    for name in (*tables, "cube_meta", *META_TABLES):
         path = out / "catalogue" / f"{name}.parquet"
-        files[path.relative_to(out).as_posix()] = {"rows": len(rows),
-                                                   **copy_parquet(con, drive, f"SELECT * FROM catalogue_table ORDER BY {CATALOGUE_ORDER[name]}", path)}
+        parts = [(out / "parts" / name / f"{pid}.parquet").as_posix() for pid in args.pids if reports[pid]["status"] == "ok"]
+        parts = [p for p in parts if os.path.exists(p)]
+        if name in tables:
+            con.register("catalogue_table", pa.Table.from_pylist(tables[name], schema=CATALOGUE_SCHEMAS[name]))
+        else:
+            con.register("catalogue_table", CATALOGUE_SCHEMAS[name].empty_table())
+        table_sql = "catalogue_table"
+        if parts:
+            table_sql = "read_parquet([" + ", ".join(f"'{p}'" for p in parts) + "])"
+        rows = con.execute(f"SELECT count(*) FROM {table_sql}").fetchone()[0]
+        source = f"SELECT * FROM {table_sql} ORDER BY {CATALOGUE_ORDER[name]}"
+        files[path.relative_to(out).as_posix()] = {"rows": rows, **copy_parquet(con, drive, source, path)}
         con.unregister("catalogue_table")
     con.close()
     shutil.rmtree(out / "tmp")
