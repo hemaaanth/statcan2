@@ -454,11 +454,12 @@ def run(args, worker=_worker_build, family="wds", script="tools/wds_build.py", p
         if entry["report"]["status"] == "ok" and parquet and (out / parquet["path"]).exists() \
                 and (out / parquet["path"]).stat().st_size == parquet["bytes"]:
             saved[path.stem] = entry
-    # Largest ZIPs first so the multi-GB tables never become the last straggler.
+    # Smallest ZIPs first: most tables finish early and memory stays low. Several multi-GB tables sorting at once
+    # exhausted RAM on a 30 GB laptop; run those as a separate --jobs 1 build.
     todo = [pid for pid in args.pids if pid not in saved]
     zip_bytes = {pid: (capture / "zips" / f"{pid}-en.zip").stat().st_size if (capture / "zips" / f"{pid}-en.zip").exists() else 0
                  for pid in todo}
-    order = sorted(todo, key=lambda p: -zip_bytes[p])
+    order = sorted(todo, key=lambda p: (zip_bytes[p], p))
     print(f"{len(args.pids) - len(todo)} tables kept from earlier runs, {len(order)} to build", flush=True)
     memory = max(1, args.memory_gib // args.jobs)
     with multiprocessing.get_context("forkserver").Pool(args.jobs, _worker_init,
