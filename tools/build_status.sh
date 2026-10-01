@@ -3,7 +3,7 @@
 D=/run/media/hemanth/Kingston/statcan-derived
 findmnt -n -o UUID --target /run/media/hemanth/Kingston | grep -q 72D0-2131 || { echo "SSD 72D0-2131 not mounted"; exit 1; }
 date '+%F %H:%M'
-for pair in wds:statcan-build-wds census:statcan-build-census; do
+for pair in wds:statcan-build-wds-phase2 census:statcan-build-census; do
   name=${pair%%:*} unit=${pair#*:} b=$D/$name-full-1
   total=$(wc -l < "$D/full-$name-pids.txt")
   done_=$(find "$b/reports" -name '*.json' 2>/dev/null | wc -l)
