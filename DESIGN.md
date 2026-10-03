@@ -20,7 +20,7 @@ The site is a data terminal. It is a serious tool, not a marketing site.
 
 1. **No notes on mockups.** Every word in a frame is text a real user would read on the real site. Design notes go in this file, never on the canvas.
 2. **Grids fit the viewport.** Desktop frames are 1440 wide. Every card, cell and label fits inside its box at that size. Nothing is cut off. Long titles wrap inside a fixed title area; they do not push other rows out of line.
-   - **App screens** (01 Home, 02 Results, 03 Chart) are exactly 1440 × 900. They do not scroll.
+   - **App screens** (01 Home, 02 Results, 03 Chart) fill the browser window at any size. They do not scroll. The frames are drawn at 1440 × 900 only as a reference. In code there is no max width and no fixed height: the 03 plot grows with the window in both directions, and the top bar and the control rail run the full width.
    - **Document pages** (04 Table, 05 Place, 06 Census, 07 Developers) are 1440 wide and as tall as their content (`fit-content`). The key content sits in the first 900 px: the header, the meta strip, and the main list or grid with its right rail. The page ends with the footer.
    - Rows in lists use a minimum height, not a fixed height, so a long title wraps and the row grows.
 3. **Real data only.** Every number, title, member, note and ID comes from a build on the SSD (`v0` and its Normalized build `n4` for WDS tables, `census-full-1` for Census tables). Never invent a value.
@@ -75,11 +75,14 @@ Red is never a background fill for large areas. There are no other accent colour
 
 ### Charts
 
-- One line in red is the main series. Up to 5 compare lines in ink or grey.
+- One line in red is the series. There is one series per chart in v3 (no compare).
 - Line width 1.5 px for sparklines, 2 px for full charts. The latest point is a dot.
 - Gridlines are horizontal only, `Grid` colour. The baseline is `Border`.
 - Y labels sit on the right edge in Geist Mono 11 px tertiary. X labels are years.
 - The latest value has a red tag on the y axis. The hover point has an ink date tag on the x axis and a readout box.
+- Nothing sits on top of the plot except the hover readout. Titles and stats go in a band above the plot.
+- The readout is drawn above everything and is never clipped. It sits beside the pointer on the side away from the line, and flips to the other side near an edge.
+- No credit, licence or help lines on a chart. Licence notes go on 07 Developers.
 - A blank value is a gap. A published zero is zero.
 
 ## Components
@@ -91,7 +94,7 @@ Red is never a background fill for large areas. There are no other accent colour
 | **Tabs** | 56 px high. Label Geist 15 500 plus a mono count. Active tab is ink with a 2 px ink underline. Others are secondary. |
 | **Series card (small)** | 341 px wide, padding 20, gap 12. Title area is a fixed 64 px: title Geist 17/22 600 (up to 2 lines), then a 13 px sub line. Sparkline fills the middle. Value row 28 px: value, change in mono, spacer, vector ID in mono 11 tertiary. |
 | **Series card (top match)** | Two columns wide. Red "TOP MATCH" label in mono 11. Title Geist 28 600, sub line with the table title and place. Big value at the top right (44 px) with "Aug 2026 · +3.0% 1Y" in mono under it. Full-history red chart with gridlines. Footer row in mono 11 tertiary: table number, vector, span, and an `open ↵` hint at the right. |
-| **Control rail** | 60 px band along the bottom of the chart screen, 1 px rule on top, padding 0 24 0 48, gap 24. Left: range toggle and the date span in mono 12, a 1 × 24 divider, a "+ Compare" button, a "Notes 8" button. Right: source line in mono 12 tertiary, then a Chart / Table toggle. |
+| **Control rail** | 60 px band along the bottom of the chart screen, 1 px rule on top, padding 0 24 0 48, gap 24. Full width. Left: range toggle and the date span in mono 12, a 1 × 24 divider, a "Notes 8" button. Right: source line in mono 12 tertiary, then a Chart / Table toggle. |
 | **Segmented toggle** | 30 px high, 1 px `Border` outline, 1 px `Rule` between segments. Range segments are mono 12, 40 px wide. The active segment is an ink fill with white text. The others are secondary text on white. |
 | **Button** | 30 px high, 1 px `Border` outline, padding 0 10, Geist 14 500 ink. An optional 12 px icon or a mono count follows the label. |
 | **Stats row** | Under a 1 px ink rule. Cells 150 px wide with a 1 px rule between them. Mono 11 uppercase labels (`AUG 2026`, `1 MONTH`, `1 YEAR`), letter-spacing 0.06em, over Geist 28/32 600 values. |
@@ -136,10 +139,12 @@ Frame `02 Results — cpi canada`.
 
 Data:
 
+- Series tab shows only series with **2 or more published points** (`n_published >= 2`). A single value is not a chart. Single-period values (for example one Census cell) are reached through the Tables tab and the table page.
+- Order: text match first, then more published points first (`n_published` descending), then the latest end date first.
 - Series tab: `GET /api/v1/series?q=…`. Card value is the latest `value`; the change is computed from the point 12 periods earlier, labelled `1Y`.
 - Sparklines: `GET /api/v1/series/{pid}/{vector}` points.
 - Tables tab: `GET /api/v1/tables?q=…`.
-- If a query matches more cards than fit, the grid pages. It never scrolls past the footer inside the 900 px frame.
+- If a query matches more cards than fit, the grid pages. It never scrolls past the footer inside the window.
 
 ### 03 Chart
 
@@ -147,12 +152,14 @@ Frame `03 Chart — All-items`.
 
 - Top bar with the query, and Download, Cite, API and Share at the right.
 - The chart fills the space between the top bar and the control rail.
-- Title block in the top-left, on a white panel over the chart: mono 12 line "18-10-0006-01 · Consumer Price Index", title "All-items" Geist 44/48 600, sub line "Canada · Index, 2002=100 · Monthly, seasonally adjusted" in Geist 15, then the stats row (latest, 1 month, 1 year).
-- Chart: plot from x 48 to x 1360, gridlines every 20 index points, y labels at x 1372, year labels under the baseline. Latest value 169.3 in a red tag on the y axis.
+- **Header band** above the plot, from x 48 to the right padding, top 24. Left: mono 12 line "18-10-0006-01 · Consumer Price Index", title "All-items" Geist 44/48 600, sub line "Canada · Index, 2002=100 · Monthly, seasonally adjusted" in Geist 15. Right, aligned to the bottom of the title: the stats row (latest, 1 month, 1 year), three 150 px cells under a 1 px ink rule. The band has no background and no border. It never overlaps the plot.
+- Chart: plot from x 48 to the window width minus 80 (y labels sit in those 80 px), and from under the header band to the top of the control rail. At 1440 wide that is x 48 to x 1360, gridlines every 20 index points, y labels at x 1372, year labels under the baseline. Latest value 169.3 in a red tag on the y axis.
 - The chart screen has no footer. The chart uses the full height.
 - Hover readout near the pointer: date, value, change on the same month a year earlier.
-- Control rail: Range `1Y 5Y 10Y 20Y Max` (Max active), "Jan 1992 – Aug 2026", "+ Compare", "Notes 8". Right side: "Statistics Canada · 18-10-0006-01 · v41690914 · released 14 Sep 2026", then Chart | Table.
+- Control rail: Range `1Y 5Y 10Y 20Y Max` (Max active), "Jan 1992 – Aug 2026", "Notes 8". Right side: "Statistics Canada · 18-10-0006-01 · v41690914 · released 14 Sep 2026", then Chart | Table.
 - Table mode replaces the chart with a dense table of every point. It never shows both.
+- **Range buttons are links**: `?range=1Y|5Y|10Y|20Y|max` (default `max`). They work without JavaScript. The chosen range sets the active button, the date span text, and both axes: the x axis covers only that span and the y axis rescales to the values in it. If the series is shorter than a range, that button is disabled.
+- **No compare** in v3. No "+ Compare" button and no link to raw JSON from the chart screen. JSON is reached through the API button.
 
 Data: `GET /api/v1/series/{pid}/{vector}` for points, labels, unit and citation. `GET /api/v1/tables/{pid}` for notes and release time. Cite copies the `citation` string.
 
@@ -177,7 +184,7 @@ Frame `05 Place — Ontario`. One place and every table that covers it.
 
 - Page header: `PLACE 2021A000235` and `DGUID · 2021 vintage`; title "Ontario"; sub line "Province of Canada · 55 tables in 14 subjects".
 - Meta strip: Place ID, Level, In, Geo code, Vintages, Tables, Subjects, Series, Last release.
-- **Key series**: 4 small series cards in one row, same card spec as 02. The change uses the table's own step: `1Y` for monthly, quarterly and annual series, `5Y` for census years. The head's right-hand line is "Latest published value · Ontario".
+- **Key series**: 4 small series cards in one row, same card spec as 02. They come from a fixed list per level (see below), never from the first rows of a search. The change uses the table's own step: `1Y` for monthly, quarterly and annual series, `5Y` for census years. The head's right-hand line is "Latest published value · Ontario".
 - Body, left: **Tables** grouped by subject. Each group has a head with its name and count. Columns: table number (mono), title, frequency, period, series count. Archived tables use the archived tag.
 - Body, right rail:
   - **Same place**: one row per vintage (`2021A000235`, `2016A000235`, `2011A000235`) and the province code (`code:0002:35`). The current vintage has a 2 px red marker on its left edge. Under the rows, one line says how a table is matched to this place.
@@ -187,6 +194,15 @@ Frame `05 Place — Ontario`. One place and every table that covers it.
 - Footer.
 
 Data: `GET /api/v1/places/{place_id}` (place, parent, vintages, tables grouped by subject with the member ID and series count), `GET /api/v1/series?place_id=…` for the key series.
+
+Key series list (province or territory), in order:
+
+1. Population, quarterly: 17-10-0009-01.
+2. Unemployment rate, monthly: 14-10-0287-01 (Labour force characteristics, both sexes, 15 years and over, seasonally adjusted).
+3. Consumer Price Index, All-items, monthly: 18-10-0004-01.
+4. GDP at basic prices, all industries, annual: 36-10-0222-01.
+
+If a listed table is not in the current build, skip it. Fill the empty slots with the place's other series that have `n_published >= 2`, the latest end date first, then the most published points. Never show an archived table or a series with one point. In `n4` only 17-10-0009-01 of this list is present.
 
 ### 06 Census table
 
@@ -241,4 +257,4 @@ Data: the meta strip and Builds come from `GET /api/v1/build` and `GET /api/v1/c
 
 1. **Stable view URLs.** Series URLs are stable (`/series/18100006/v41690914`). Full table views and Census cells need a URL form for member filters and coordinates.
 2. **Hosted MCP.** The design shows the local stdio setup. A hosted endpoint does not exist yet.
-3. **Key series on a place page.** 05 shows four hand-picked series. There is no field that ranks series for a place yet. Until there is one, the API thread may pick by a fixed list per level.
+3. **Key series on a place page.** 05 uses a fixed list for provinces (see 05). Lists for Canada, CMAs, census divisions and health regions are still to be written. There is no field that ranks series for a place yet.
