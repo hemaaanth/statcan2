@@ -57,7 +57,7 @@ class Client:
     def open(self, url, headers=None):
         self.calls.append((url, headers))
         assert url == URL
-        return self.response
+        return self.response.pop(0) if isinstance(self.response, list) else self.response
 
 
 class DownloadTests(unittest.TestCase):
@@ -150,6 +150,18 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(opened.call_count, 3)
         self.assertFalse(self.output.exists())
         outage.close()
+
+    def test_slow_connection_reconnects_and_resumes(self):
+        clock = [0]
+        class Slow(Response):
+            def read(self, count):
+                clock[0] += wds.SLOW_WINDOW
+                return super().read(count)
+        client = Client([Slow(DATA), Response(DATA, status=206, offset=7)])
+        with patch.object(wds.time, "monotonic", lambda: clock[0]), patch.object(wds.time, "sleep"):
+            self.assertEqual(self.transfer(client), ("downloaded", len(DATA)))
+        self.assertEqual(client.calls[1][1], {"Range": "bytes=7-", "If-Range": '"version-1"'})
+        self.assertEqual(self.output.read_bytes(), DATA)
 
     def test_api_url_is_authoritative_for_archived_tables(self):
         archived = f"https://www150.statcan.gc.ca/archive/{PID}/download.zip"

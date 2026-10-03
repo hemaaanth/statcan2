@@ -32,6 +32,8 @@ API_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getFullTableDownloadCSV/{pid
 SAVED_INVENTORY = Path(__file__).resolve().parent.parent / "data/local/wds-size-survey/20260930T015419Z/inventory.json"
 CHUNK = 1024 * 1024
 RESERVE = 100 * 1024**3
+SLOW_WINDOW = 60
+SLOW_BYTES = 256 * 1024 * SLOW_WINDOW  # A stuck connection trickles; a fresh one to the same ZIP is fast.
 
 
 def utc_now():
@@ -47,6 +49,10 @@ class UpstreamStop(Exception):
 
 
 class DownloadError(Exception):
+    pass
+
+
+class SlowConnection(TimeoutError):
     pass
 
 
@@ -327,6 +333,7 @@ def transfer(drive, client, pid, language, url, output, manifest, should_stop=la
                     drive.atomic_json(state_path, state)
                 drive.check(CHUNK)
                 with part.open(mode) as stream:
+                    window, window_size = time.monotonic(), size
                     while True:
                         if should_stop():
                             raise StopRequested()
@@ -337,6 +344,10 @@ def transfer(drive, client, pid, language, url, output, manifest, should_stop=la
                         size += len(chunk)
                         if total is not None and size > total:
                             raise DownloadError(f"ZIP exceeds Content-Length: {pid}/{language}")
+                        if time.monotonic() - window >= SLOW_WINDOW:
+                            if size - window_size < SLOW_BYTES:
+                                raise SlowConnection(f"ZIP below {SLOW_BYTES // SLOW_WINDOW // 1024} KiB/s: {pid}/{language}")
+                            window, window_size = time.monotonic(), size
                     stream.flush()
                     os.fsync(stream.fileno())
                 if total is not None and size != total:

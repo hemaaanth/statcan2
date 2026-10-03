@@ -10,6 +10,13 @@ The first capture targets all 8,271 PIDs in a saved WDS inventory, including arc
 - The SSD had about 588 GiB free at start. The downloader stops before free space falls below its 100 GiB reserve. The size survey is only an estimate, not a guarantee the corpus fits.
 - This SSD capture is **not a backup**. Do not treat it as production storage until a second copy and restore check exist.
 
+## Baseline result
+
+The English `baseline` finished on 2026-09-30. It has 8,266 of 8,271 inventory PIDs as ZIP plus manifest, 173.7 GiB of ZIPs. Every ZIP size matches its manifest. Five archived tables failed on every attempt because of upstream problems:
+
+- `12100153`–`12100156` ("CIMT - Default view 01"): WDS returns a ZIP URL, but the ZIP is HTTP 404.
+- `13100019` (health-adjusted life expectancy, inactive): the ZIP is HTTP 200 with zero bytes. Its empty `.zip.part` pair stays in `zips/`.
+
 ## Check progress
 
 ```bash
@@ -19,7 +26,7 @@ findmnt -n -o SOURCE,UUID,TARGET --target /run/media/hemanth/Kingston/statcan-wd
 tail -n 20 /run/media/hemanth/Kingston/statcan-wds/baseline/acquisition.log
 ```
 
-`baseline/inventory.json` is the unchanged WDS inventory response. `baseline/inventory-source.json` records its source and hash. `baseline/zips/<PID>-en.zip` holds unchanged source bytes. `baseline/manifests/<PID>-en.json` records the URL, capture time, size, HTTP validators, and SHA-256. Incomplete `.zip.part` and `.zip.part.json` files can resume; `baseline/failures.jsonl` lists attempted PIDs that failed. Historical failures remain in that log after a successful retry; reconcile ZIPs and manifests against the inventory to find current gaps. After retries, an upstream HTTP 503 stops the batch instead of marking more PIDs failed. The final log summary and service exit status distinguish a clean finish from a partial run. Do not infer completion from the existence of the inventory or a few ZIPs.
+`baseline/inventory.json` is the unchanged WDS inventory response. `baseline/inventory-source.json` records its source and hash. `baseline/zips/<PID>-en.zip` holds unchanged source bytes. `baseline/manifests/<PID>-en.json` records the URL, capture time, size, HTTP validators, and SHA-256. Incomplete `.zip.part` and `.zip.part.json` files can resume; `baseline/failures.jsonl` lists attempted PIDs that failed. Historical failures remain in that log after a successful retry; reconcile ZIPs and manifests against the inventory to find current gaps. After retries, an upstream HTTP 503 stops the batch instead of marking more PIDs failed. A ZIP connection slower than 256 KiB/s over 60 seconds is dropped and resumed with a new connection; it counts as one of the three attempts. The final log summary and service exit status distinguish a clean finish from a partial run. Do not infer completion from the existence of the inventory or a few ZIPs.
 
 ## Stop or resume
 
