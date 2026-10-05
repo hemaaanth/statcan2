@@ -22,12 +22,15 @@ function logo() {
   return html`<a class="brand" data-pp="pp_mury6rk1a84x" href="/" aria-label="statcan(2) home"><svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="18" fill="#0E0F11"/><path d="M18 72L40 52L56 60L74 32" fill="none" stroke="#fff" stroke-width="11" stroke-linejoin="round" stroke-linecap="round"/><circle cx="74" cy="32" r="11" fill="#D80621"/></svg><span class="brand-word">statcan<span class="brand-version">(2)</span></span></a>`;
 }
 
+/** The last top bar item, on every page: an outline button to the project's Buy Me a Coffee page, in a new tab. */
+const DONATE = raw(`<a class="donate" href="https://buymeacoffee.com/statcan2" target="_blank" rel="noopener">Donate</a>`);
+
 /** Shared top bar for the app and reference pages. */
 function appHeader(q = "", active = "") {
   return html`<header class="topbar">
     ${logo()}
     <form class="ask" method="get" action="/" role="search"><span class="prompt">›</span><input name="q" value="${q}" placeholder="What do you want to understand?" aria-label="What do you want to understand?" autocomplete="off" spellcheck="false"></form>
-    <nav><a class="${active === "api" ? "active" : ""}" href="/api">API</a><a class="${active === "mcp" ? "active" : ""}" href="/mcp">MCP</a></nav>
+    <nav><a class="${active === "api" ? "active" : ""}" href="/api">API</a><a class="${active === "mcp" ? "active" : ""}" href="/mcp">MCP</a>${DONATE}</nav>
   </header>`;
 }
 
@@ -89,7 +92,7 @@ function appPage(state: AppState, meta: PageMeta) {
 <body class="app-body" data-status="${p.status}">
 <header class="topbar app-top">${logo()}
   <form class="ask" method="get" action="/" role="search"><span class="prompt">›</span><input id="q" name="q" value="${state.q}" placeholder="What do you want to understand?" aria-label="What do you want to understand?" autocomplete="off" spellcheck="false"></form>
-  <nav><a href="/api">API</a><a href="/mcp">MCP</a></nav>
+  <nav><a href="/api">API</a><a href="/mcp">MCP</a>${DONATE}</nav>
   <div class="progress" aria-hidden="true"></div>
 </header>
 <main class="app">
