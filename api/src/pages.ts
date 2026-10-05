@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
@@ -15,6 +17,10 @@ import { clientIcons } from "./client_icons.ts";
 // Pinned Highcharts build from a CDN; non-commercial licence applies (personal, non-profit project). SRI protects against CDN tampering.
 const HIGHCHARTS = { src: "https://cdn.jsdelivr.net/npm/highcharts@13.1.1/highcharts.js", integrity: "sha384-FXT8Mj1JsVEsCNEB3qjrU1JPYJ94Ku7uMe0eopjumL2jEkPl1O9YeAZJn+qsOFVW" };
 const PUBLIC_DIR = fileURLToPath(new URL("../public", import.meta.url));
+/** Pages link the app's CSS and JS under `/static/v/<hash of their contents>/`, so a deploy that edits one gets new
+ * URLs: no browser or Cloudflare cache can serve a stale file. Relative imports and `@import` resolve under the same path. */
+const ASSETS = `/static/v/${createHash("sha256").update(readdirSync(PUBLIC_DIR).filter((f) => /\.(css|js)$/.test(f)).sort()
+  .map((f) => f + readFileSync(`${PUBLIC_DIR}/${f}`, "utf8")).join("\0")).digest("hex").slice(0, 10)}`;
 
 
 /** The favicon's mark (brand/build.mjs concept f, the maple leaf as an area chart in an ink axis) on a 100×100 viewBox.
@@ -74,7 +80,7 @@ function metaTags(meta: PageMeta) {
 function layout(title: string, meta: PageMeta, body: HtmlEscapedString | Promise<HtmlEscapedString>, q = "", pageClass = "page", active = "") {
   const footer = active === "mcp" ? "Streamable HTTP · /api/mcp" : "JSON over HTTPS · /api/v1";
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title} · statcan2</title>${metaTags(meta)}<style>${raw(CSS)}</style><link rel="stylesheet" href="/static/topbar.css"><script type="module" src="/static/docs.js"></script></head>
+<title>${title} · statcan2</title>${metaTags(meta)}<style>${raw(CSS)}</style><link rel="stylesheet" href="${ASSETS}/topbar.css"><script type="module" src="${ASSETS}/docs.js"></script></head>
 <body class="doc-body">${appHeader(q, active)}<main class="${pageClass}"><div class="doc-scroll">${body}</div><footer class="footbar"><span>Independent. Not affiliated with Statistics Canada.</span><span>${footer}</span></footer></main></body></html>`;
 }
 
@@ -91,13 +97,12 @@ function appPage(state: AppState, meta: PageMeta) {
   const count = (k: string) => k === "notes" ? p.counts.notes || "" : k === "cite" && p.counts.cite > 1 ? p.counts.cite : "";
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} · statcan2</title>${metaTags(meta)}<script>document.documentElement.classList.add("js")</script>
-<style>${raw(CSS)}</style><link rel="stylesheet" href="/static/app.css">
-<script src="${HIGHCHARTS.src}" integrity="${HIGHCHARTS.integrity}" crossorigin="anonymous" defer></script><script type="module" src="/static/app.js"></script></head>
+<style>${raw(CSS)}</style><link rel="stylesheet" href="${ASSETS}/app.css">
+<script src="${HIGHCHARTS.src}" integrity="${HIGHCHARTS.integrity}" crossorigin="anonymous" defer></script><script type="module" src="${ASSETS}/app.js"></script></head>
 <body class="app-body" data-status="${p.status}">
 <header class="topbar app-top">${logo()}
-  <form class="ask" method="get" action="/" role="search"><span class="prompt">›</span><input id="q" name="q" value="${state.q}" placeholder="What do you want to understand?" aria-label="What do you want to understand?" autocomplete="off" spellcheck="false"></form>
+  <form class="ask" method="get" action="/" role="search"><span class="prompt">›</span><input id="q" name="q" value="${state.q}" placeholder="What do you want to understand?" aria-label="What do you want to understand?" autocomplete="off" spellcheck="false"><div class="progress" aria-hidden="true"></div></form>
   <nav><a href="/api">API</a><a href="/mcp">MCP</a>${DONATE}</nav>
-  <div class="progress" aria-hidden="true"></div>
 </header>
 <main class="app">
   <div class="app-main">
@@ -120,7 +125,9 @@ function appPage(state: AppState, meta: PageMeta) {
 
 export function pageRoutes({ db }: Config) {
   const site = new Hono();
-  // no-cache = revalidate every load (304 via Last-Modified), so an edited module is never served stale; the files are a few KB.
+  // Versioned CSS and JS never change at one URL: cache them for a year. Any hash serves the current files.
+  site.use("/static/v/:hash/*", serveStatic({ root: PUBLIC_DIR, rewriteRequestPath: (p) => p.replace(/^\/static\/v\/[^/]+/, ""), onFound: (_path, c) => { c.header("Cache-Control", "public, max-age=31536000, immutable"); } }));
+  // Everything else (brand files): no-cache = revalidate every load (304 via Last-Modified).
   site.use("/static/*", serveStatic({ root: PUBLIC_DIR, rewriteRequestPath: (p) => p.slice("/static".length), onFound: (_path, c) => { c.header("Cache-Control", "no-cache"); } }));
   type Endpoint = { method: string; path: string; description: string; params?: string };
   const endpointGroups: [string, Endpoint[]][] = [

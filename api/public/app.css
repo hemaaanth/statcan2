@@ -1,5 +1,5 @@
 /* App screen (/). Base tokens come from pages.ts CSS; the top bar from topbar.css (imported below); DESIGN.md is the spec. */
-@import url("/static/topbar.css");
+@import url("topbar.css");
 :root{
   /* Categorical palette, 10 slots (ViewSeries.color). Checked for protan/deutan/tritan separation; slot 0 is the site red. */
   --c0:#D80621;--c1:#0E0F11;--c2:#2A5DB0;--c3:#C27400;--c4:#2E9C5A;--c5:#CC79A7;--c6:#3A8DC4;--c7:#813131;--c8:#7341D6;--c9:#A50D72;
@@ -9,8 +9,9 @@
 .sw{display:inline-block;width:10px;height:10px;background:var(--c);flex:none;vertical-align:baseline;margin-right:6px}
 
 .app-top{position:sticky;top:0;z-index:20}
-.progress{position:absolute;left:0;right:0;bottom:-1px;height:2px;overflow:hidden;pointer-events:none}
-.loading .progress::after{content:"";position:absolute;inset:0 auto 0 0;width:30%;background:var(--ink);animation:slide 1s linear infinite}
+/* Loading: a red segment runs along the search box's own 2 px underline (the box is the containing block). */
+.progress{position:absolute;left:0;right:0;bottom:-2px;height:2px;overflow:hidden;pointer-events:none}
+.loading .progress::after{content:"";position:absolute;inset:0 auto 0 0;width:30%;background:var(--hot);animation:slide 1s linear infinite}
 @keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
 @media (prefers-reduced-motion:reduce){.loading .progress::after{animation:none;width:100%;opacity:.4}}
 

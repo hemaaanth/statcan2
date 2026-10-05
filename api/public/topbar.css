@@ -16,6 +16,6 @@
   .topbar{padding:0 12px;gap:12px}
   .topbar .brand-version{display:none}
   .topbar nav a:not(.donate){display:none}
-  .topbar .ask{position:static;transform:none;width:auto;flex:1;min-width:0}
+  .topbar .ask{position:relative;inset:auto;transform:none;width:auto;flex:1;min-width:0}
   .topbar .ask input{font-size:16px}
 }
