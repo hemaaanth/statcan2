@@ -207,7 +207,9 @@ export class Db {
     }
     const cleanByPid = new Map<string, { dir: string; manifest: Manifest }>();
     const cleans = inputs.map((input, index) => {
-      const dir = index === 0 ? buildDir : input.dir;
+      // The manifest records absolute paths. When the builds move together (a server copy), find the input next to buildDir.
+      const sibling = path.join(path.dirname(buildDir), path.basename(input.dir));
+      const dir = index === 0 ? buildDir : existsSync(input.dir) || !existsSync(sibling) ? input.dir : sibling;
       if (mountUuid) requireMount(dir, mountUuid);
       const bytes = readFileSync(path.join(dir, "build_manifest.json"));
       const manifest = JSON.parse(bytes.toString("utf8")) as Manifest;

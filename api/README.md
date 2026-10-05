@@ -19,7 +19,7 @@ STATCAN_UUID=72D0-2131 PORT=3000 npm start
 npm run check   # tsc --noEmit
 ```
 
-- `STATCAN_BUILD` (required): first Clean build directory. The Normalized manifest's `cleans[]` supplies any other Clean input paths; no extra environment variable is needed.
+- `STATCAN_BUILD` (required): first Clean build directory. The Normalized manifest's `cleans[]` supplies any other Clean input paths; no extra environment variable is needed. Those paths are absolute. If one is missing, the server looks for a directory with the same name next to `STATCAN_BUILD`, so builds copied together to another disk still open.
 - `STATCAN_NORMALIZED` (required): a `normalized/<id>/` directory. The server validates every Clean build ID, family, queryable count, and manifest SHA-256 against its input record.
 - `STATCAN_CODESETS` (required): captured WDS `getCodeSets` response (`codeSets.json`) with its sibling `.sha256`. The SHA-256 must match the Normalized manifest.
 - `STATCAN_CAPTURE` (optional): enables original ZIP downloads only when the table's Clean report names a ZIP in this capture directory. The 2021 Census ZIPs are original Statistics Canada CSV downloads captured in the same `baseline` directory; they are not WDS observation-format ZIPs.
@@ -28,6 +28,18 @@ npm run check   # tsc --noEmit
 - `PUBLIC_ORIGIN` defaults to `https://statcan2.ca`. It sets absolute Open Graph, canonical, Cite, chart/share links, OpenAPI servers, and MCP text; request-relative navigation stays relative. For local link testing set `PUBLIC_ORIGIN=http://127.0.0.1:3000`. Image footers always say `statcan2.ca`, even with an override.
 
 DuckDB runs with 4 threads and a 2 GB memory limit. It spills to `<STATCAN_BUILD>/tmp`. Stop the server with SIGTERM or SIGINT so DuckDB deletes its spill files.
+
+### Deploy
+
+The repo-root `Dockerfile` builds the server (the API reads `api/` and `data/ref/`). Mount the data at `/data`:
+
+```
+/data/wds-full-1/{build_manifest.json,catalogue,obs,normalized/n8,tmp}
+/data/census-full-1/{build_manifest.json,catalogue,obs}
+/data/codesets/{codeSets.json,codeSets.json.sha256}
+```
+
+`tmp` must be writable by the `node` user (uid 1000). Leave `STATCAN_UUID` unset. Set `TYPESAFE_API_KEY` for the planner. statcan2.ca runs this image on Coolify behind a Cloudflare Tunnel.
 
 Node 26 runs the TypeScript directly; no build step. Dependencies include `hono`, `@hono/node-server`, `@duckdb/node-api`, `@modelcontextprotocol/sdk`, `zod`, `@resvg/resvg-js`, and the locally bundled Geist font files. OG cards render SVG to PNG in-process; no browser or screenshot service is needed.
 
@@ -60,7 +72,7 @@ Values stay as published: `value`, `status`, `symbol`, `ref_date`, `uom`, `scala
 `POST /api/v1/view` takes a `ViewSpec`. `GET /api/v1/view?s=<base64url JSON>` runs the same spec.
 The response is a `ViewResult`: resolved member IDs, series, axes, notes, source citations, warnings, and share/export links.
 Every JSON response includes `build_id` and `normalized_build_id`; errors have `error` and provenance (400 invalid input, 404 unknown PID, 422 invalid view).
-Published API descriptions: `https://statcan2.ca/api/v1/openapi.json` and `https://statcan2.ca/api/v1/openapi.json`. Resolved view and citation links use `PUBLIC_ORIGIN`, not a proxy or request Host header.
+Published API description: `https://statcan2.ca/api/v1/openapi.json`. Resolved view and citation links use `PUBLIC_ORIGIN`, not a proxy or request Host header.
 
 | Path | Result |
 |---|---|
