@@ -1,0 +1,217 @@
+concept_id,label,description,pids
+consumer_prices,Consumer Price Index,Monthly all-items consumer price index and provincial price changes,18100004;18100006
+consumer_inflation,Headline consumer inflation,Annual and monthly consumer inflation measured by the all-items price index,18100004
+food_prices,Food consumer prices,Consumer price index for food and food product groups,18100004
+store_food_prices,Food purchased from stores,Consumer price index for food sold in grocery stores,18100004
+restaurant_food_prices,Restaurant food prices,Consumer price index for food purchased from restaurants,18100004
+gasoline_cpi,Gasoline consumer prices,Consumer price index for gasoline within household transportation,18100004
+shelter_cpi,Shelter consumer prices,Consumer price index for housing and shelter components,18100004
+rent_cpi,Rent consumer prices,Consumer price index for rented accommodation and rent,18100004
+mortgage_cost_cpi,Mortgage interest costs,Consumer price index for mortgage interest cost,18100004
+homeowners_cpi,Homeowner accommodation costs,Consumer price index for owned accommodation,18100004
+energy_cpi,Household energy prices,Consumer price index for electricity natural gas and heating fuels,18100004
+transport_cpi,Transportation consumer prices,Consumer price index for transportation goods and services,18100004
+vehicle_cpi,Passenger vehicle prices,Consumer price index for purchase and operation of passenger vehicles,18100004
+clothing_cpi,Clothing consumer prices,Consumer price index for clothing and footwear,18100004
+health_cpi,Health and personal care prices,Consumer price index for health care and personal care,18100004
+education_cpi,Education consumer prices,Consumer price index for tuition and education services,18100004
+recreation_cpi,Recreation consumer prices,Consumer price index for recreation education and reading,18100004
+communications_cpi,Communication service prices,Consumer price index for telephone and internet services,18100004
+core_inflation,Core inflation measures,Bank of Canada measures of core consumer inflation,18100256;10100106
+consumer_basket,Consumer price basket weights,Expenditure weights of consumer price products across Canadian geographies,18100007
+retail_gas_prices,Gasoline pump prices,Monthly average retail prices for gasoline and fuel oil,18100001
+retail_product_prices,Retail product prices,Monthly average retail prices of selected consumer products,18100245
+retail_food_prices_dollars,Average food prices in dollars,Monthly average retail dollar prices for selected grocery products not an inflation index,18100245
+industrial_producer_prices,Industrial product price index,Monthly producer prices for manufactured goods and product groups,18100266;18100265
+farm_product_prices,Farm product price index,Monthly farm-gate prices for agricultural commodity groups,32100098
+new_housing_prices,New housing price index,Monthly price index for new residential housing,18100205
+commercial_rent_prices,Commercial rent price index,Services price index for commercial rental buildings,18100255
+retail_service_prices,Retail services price index,Monthly margins and service prices for retail industries,18100251
+wholesale_service_prices,Wholesale services price index,Monthly service prices for wholesale industries,18100277
+labour_force,Labour force characteristics,Monthly labour force population employment and unemployment,14100287
+unemployment_rate,Unemployment rate,Monthly unemployed share of the labour force across Canada and provinces,14100287
+employment_rate,Employment rate,Monthly employed share of the working-age population,14100287
+participation_rate,Labour force participation rate,Monthly labour force participation among working-age Canadians,14100287
+employment_total,Employment levels,Monthly number of employed persons by geography and demographics,14100287
+unemployment_total,Unemployment levels,Monthly number of unemployed persons by geography and demographics,14100287
+provincial_labour,Provincial labour markets,Employment unemployment and participation in provinces and territories,14100287
+industry_employment,Employment by industry,Monthly payroll employment counts by industry and province,14100201;14100220
+occupational_employment,Employment by occupation,Labour force characteristics for occupational groups,14100421;14100310
+weekly_earnings,Average weekly earnings,Monthly employee weekly earnings by industry and province,14100220;14100223
+industry_earnings,Weekly earnings by industry,Monthly average employee earnings across industry classifications,14100220;14100203
+employee_wages,Employee wages and hourly wage rates,Monthly employee wages and average hourly wage rates by job permanency and union coverage,14100065
+wage_growth,Earnings growth,Monthly changes in average weekly employee earnings,14100223;14100220
+payroll_employment,Payroll employment,Monthly count of payroll employees by province and industry,14100223;14100220
+job_vacancies,Job vacancies,Monthly unfilled positions and vacancy rates by province,14100432;14100371
+industry_vacancies,Job vacancies by industry,Monthly open jobs and vacancy rates by industry sector,14100406;14100372
+occupation_vacancies,Job vacancies by occupation,Quarterly vacancies and offered hourly wages by occupation,14100444
+unemployment_duration,Duration of unemployment,Monthly time spent unemployed by job seekers,14100342
+hours_worked,Actual hours worked,Monthly hours worked by employees in their main and other jobs,14100032
+usual_hours,Usual hours worked,Monthly scheduled or usual hours by job type,14100030
+union_coverage,Union coverage,Monthly share of workers covered by unions across industries,14100069
+student_employment,Student labour market,Monthly employment unemployment and participation of students,14100021
+immigrant_labour,Immigrant labour force,Employment and unemployment characteristics of immigrants,14100472
+indigenous_labour,Indigenous labour force,Labour force characteristics of Indigenous people living off reserve,14100470
+labour_age,Labour force by age,Monthly employment and unemployment across age groups,14100287
+labour_gender,Labour force by gender,Monthly employment and unemployment by gender,14100287
+full_time_employment,Full-time employment,Monthly full-time paid work within labour force characteristics,14100287
+part_time_employment,Part-time employment,Monthly part-time work within labour force characteristics,14100287
+population_total,Population estimates,Quarterly estimated resident population by geography,17100009;17100005
+population_age,Population by age and gender,Annual population estimates broken down by age and gender,17100005
+population_city,Metropolitan population,Annual population estimates for metropolitan areas and agglomerations,17100148
+population_regions,Regional population,Annual population estimates by economic region,17100150
+population_components,Components of demographic growth,Annual births deaths and migration that contribute to population change,17100008
+population_growth_rate,Population growth rate,Percentage change in total quarterly population estimates by geography,17100009
+births,Live births,Annual live births by place of residence of the mother,13100414
+births_age,Live births by maternal age,Annual live births across age groups of mothers,13100416
+deaths,Deaths and mortality,Annual deaths by age and gender across Canadian geographies,17100006;13100709
+deaths_by_cause,Deaths by cause,Annual deaths by cause and province of residence rather than total deaths alone,13100932
+life_expectancy,Life expectancy,Life table estimates of survival and life expectancy,13100114;13100837
+international_migration,International migration,Quarterly immigrants emigrants and temporary residents,17100040
+interprovincial_migration,Interprovincial migration,Quarterly moves between Canadian provinces and territories,17100020
+immigrant_income,Income of immigrants,Annual incomes by immigrant admission category and tax year,43100026
+private_households,Private households,Annual estimates of households by size and location,17100159
+marriage_rates,Marriage rates,Number and age-specific rates of persons marrying,39100057
+divorce_rates,Divorce rates,Divorces and rates by age or duration of marriage,39100053;39100054
+gdp_monthly,Monthly GDP by industry,Monthly gross domestic product at basic prices across industries,36100434
+gdp_growth_rate,GDP growth rate,Percentage change in total monthly gross domestic product across all industries,36100434
+gdp_industry,Industry GDP,Value added by Canadian industries at basic prices,36100434;36100711
+gdp_provincial,Provincial GDP,Annual gross domestic product by province and industry,36100711
+gdp_quarterly,Expenditure-based GDP,Quarterly gross domestic product from household business and government expenditure,36100104;36100123
+real_gdp,Real GDP,Inflation-adjusted gross domestic product at constant prices,36100434;36100123
+gdp_industry_share,Industry share of GDP,Annual percentage contributions of industries to provincial GDP,36100400
+labour_productivity,Labour productivity,Output per hour worked across business sector industries,36100207;36100713
+household_consumption,Household consumption,Household final consumption expenditure in quarterly national accounts,36100104
+business_investment,Investment expenditure,Business fixed capital investment in national accounts,36100104
+international_merchandise_trade,Merchandise trade,Monthly value of Canadian imports and exports by commodity,12100163
+merchandise_exports,Merchandise exports,Monthly domestic exports and re-exports by destination,12100182;12100179
+merchandise_imports,Merchandise imports,Monthly imports by country of origin and export,12100178;12100163
+trade_partners,Merchandise trade partners,Annual merchandise trade by country and product section,12100171;12100173
+us_exports,Exports to the United States,Monthly Canadian merchandise exports to the United States,12100182;12100171
+trade_by_commodity,Trade by commodity,Monthly international merchandise trade broken down by commodity,12100163
+international_services_trade,Services trade,Monthly imports and exports of international services,12100144
+balance_of_payments,Balance of payments,Quarterly international current and capital account transactions,36100016
+retail_sales,Retail trade sales,Monthly retail sales by province and territory,20100056
+food_services_sales,Food services and restaurant sales,Monthly receipts from restaurants and drinking places by province not grocery retail sales,21100019
+vehicle_sales,New motor vehicle sales,Monthly and annual new car and truck sales in units or dollars by vehicle type fuel and geography,20100085;20100086;20100001;20100002
+gasoline_sales_volume,Gasoline sales volume,Annual net sales of road motor vehicle gasoline in litres by province not pump prices,23100066
+retail_industries,Retail trade industries,Monthly retail activity across retail industry categories,20100056
+wholesale_sales,Wholesale trade sales,Monthly sales of wholesale businesses by industry,20100074;20100003
+wholesale_inventories,Wholesale inventories,Monthly inventories held by wholesale businesses,20100076
+wholesale_volume,Wholesale sales volume,Price-adjusted volume and price measures for wholesale sales,20100018
+manufacturing_sales,Manufacturing sales,Monthly manufacturing sales by industry and province,16100048
+manufacturing_orders,Manufacturing orders,Monthly orders and inventories in the manufacturing sector,16100013
+manufacturing_prices,Manufactured goods prices,Monthly industrial producer prices by industry and product,18100267;18100266
+housing_starts,Housing starts,Monthly CMHC residential construction starts in Canada and provinces,34100158;34100148
+housing_starts_type,Housing starts by dwelling type,Monthly residential starts by type of housing unit,34100148;34100156
+housing_construction,Housing under construction,Quarterly starts completions and units under construction,34100135
+housing_completions,Housing completions,Quarterly completions of residential housing units,34100135
+rural_housing_starts,Rural housing starts,Monthly residential starts in rural areas of Canada and provinces,34100160
+building_permits,Building permits,Monthly value and number of residential and nonresidential building permits,34100292
+residential_permits,Residential building permits,Monthly permits for construction of residential structures,34100292
+commercial_permits,Nonresidential building permits,Monthly permits for commercial and industrial structures,34100292
+average_rents,Average rental prices,Annual CMHC average rents by area and dwelling size,34100133
+rental_vacancy,Rental vacancy rates,Annual unoccupied share of rental apartments in metropolitan areas,34100127
+residential_property_sales,Residential property sales,Number of housing and home sales measured as properties sold in Nova Scotia New Brunswick and British Columbia in 2018,46100057
+residential_property_values,Residential property values,Annual value of residential real estate holdings,34100013
+household_spending,Household spending,Annual household expenditures by province and spending category,11100222
+spending_by_income,Spending by income group,Annual household spending across income quintiles,11100223
+individual_income,Individual income,Annual market total and after-tax incomes of individuals,11100091;11100239
+median_income,Median after-tax income,Annual middle household or individual incomes after tax,11100035;11100091
+income_sources,Income sources,Employment investments transfers and other personal income sources,11100239
+low_income,Low income,Annual persons below low income thresholds by age and family type,11100135;11100136
+poverty,Poverty rates,Annual poverty and low-income statistics by demographic characteristics,11100093
+income_inequality,Income inequality,Gini coefficients for market total and after-tax income,11100134
+income_deciles,Income deciles and percentiles,Upper income limit share of income and average income for each income decile from lowest to highest,11100193;11100192
+wealth_quintiles,Wealth by net worth quintile,Household assets debts and net worth for each net worth quintile from lowest to highest,11100049
+household_credit,Household credit,Household borrowing and credit liabilities in national balance sheets,36100441
+field_crops,Field crop production,Annual planted area yield and production of principal field crops,32100359
+wheat_production,Wheat production,Annual wheat harvest area yield and farm value,32100359
+canola_production,Canola production,Annual canola harvest area yield and farm value,32100359
+corn_production,Corn production,Annual corn harvest area yield and farm value,32100359
+barley_production,Barley production,Annual barley harvest area yield and farm value,32100359
+crop_prices,Field crop prices,Annual farm prices and value for principal field crops,32100359
+farm_cash_receipts,Farm cash receipts,Quarterly cash receipts from agricultural commodities,32100046
+farm_income,Net farm income,Annual farm revenues expenses and net income,32100052
+farm_expenses,Farm operating expenses,Annual operating costs and depreciation in agriculture,32100049
+cattle_inventory,Cattle inventory,Number of cattle and calves by class and farm type,32100130
+cattle_market,Cattle supply,Annual supply and disposition of cattle,32100139
+hog_inventory,Hog inventory,Semi-annual number of hogs and pigs on farms,32100160
+hog_market,Hog supply,Semi-annual supply and disposition of hogs,32100200
+milk_production,Milk production,Monthly milk output and utilization,32100113
+egg_production,Egg production,Monthly production and disposition of eggs,32100121
+poultry_production,Poultry meat production,Annual chicken and fowl meat production and farm value,32100118
+greenhouse_production,Greenhouse produce,Production and value of greenhouse fruits and vegetables,32100456
+fruit_production,Fruit production,Annual harvested area production and value of marketed fruits,32100364;32100315
+vegetable_production,Vegetable production,Annual area production and farm value of marketed vegetables,32100365
+crude_oil_production,Crude oil production,Monthly supply and disposition of crude oil and equivalents,25100063
+natural_gas_production,Natural gas production,Monthly supply and disposition of natural gas,25100013
+electric_power_generation,Electricity generation,Monthly power generation by source of electricity,25100015
+electricity_supply,Electricity supply,Monthly electricity receipts deliveries and availability,25100016
+hydroelectricity,Hydroelectric generation,Monthly electric power generation from hydro sources,25100015
+wind_electricity,Wind power generation,Monthly electric power generation from wind,25100015
+coal_production,Coal production,Monthly coal output and exports,25100046
+oil_pipelines,Oil pipeline operations,Monthly Canadian oil pipeline carrier activity,25100067
+energy_emissions,Greenhouse gas emissions,Physical accounts of greenhouse gas emissions by industry,38100097
+rail_freight,Rail freight,Monthly railway carloadings and tonnage transported,23100216;23100092
+rail_commodities,Rail freight commodities,Monthly railway carloadings broken down by commodity,23100092
+air_passengers,Air passenger traffic,Annual passenger traffic through Canadian airports,23100253
+airport_movements,Aircraft movements,Monthly aircraft takeoffs and landings at Canadian airports,23100296
+airline_operations,Air carrier operations,Quarterly operating statistics of Canadian airlines,23100259
+vehicle_registrations,New vehicle registrations,Quarterly new motor vehicle registrations by geography,20100025
+freight_rail_prices,Rail freight prices,Monthly freight rail services price index,18100212
+road_freight_prices,Trucking freight prices,Monthly for-hire motor carrier freight services price index,18100281
+international_travellers,International travellers,Monthly travellers entering or returning to Canada,24100053
+tourist_entries,Visitor entries,Monthly international travellers entering Canada by province of entry,24100005
+tourism_demand,Tourism spending,Quarterly tourism demand and visitor expenditure in Canada,36100230
+tourism_supply,Tourism services supply,Quarterly supply of tourism commodities,36100231
+tourism_jobs,Tourism employment,Quarterly jobs generated by tourism industries,36100232
+tourism_gdp,Tourism GDP,Quarterly tourism contribution to gross domestic product,36100234
+tourism_prices,Tourism price index,Quarterly price indexes for tourism demand,36100233
+population_health,Population health indicators,Health survey indicators by age and gender,13100905
+mental_health,Perceived mental health,Self-reported mental health by gender and province,45100079
+obesity,Overweight and obesity,Measured body mass index and obesity by age and sex,13100373
+diabetes,Diabetes prevalence,Diabetes diagnosis awareness and treatment by age and sex,13100873
+cancer_incidence,Cancer incidence,Annual cancer diagnoses by cancer type and sex,13100840
+weekly_mortality,Weekly deaths,Provisional death counts by age group and sex,13100768
+health_lifespan,Healthy life expectancy,Life expectancy adjusted for health and disability,13100971
+child_health,Child and youth health,Health survey indicators for children and youth,13100947
+crime_severity,Crime severity index,Annual police-reported crime severity index by geography,35100026
+police_reported_crime,Police-reported crime,Annual counts and rates of detailed police-reported violations,35100177
+violent_crime,Violent crime,Police-reported violent criminal code violations,35100177
+property_crime,Property crime,Police-reported theft and property offences,35100177
+criminal_courts,Criminal court cases,Annual adult court cases and charges by decision type,35100027
+civil_courts,Civil court cases,Annual civil cases by court level and case type,35100112
+youth_corrections,Youth correctional services,Counts of young people in provincial correctional services,35100003
+police_staffing,Police personnel,Staffing and selected crime statistics of police services,35100077
+postsecondary_enrolment,Postsecondary enrolment,Annual student enrolment by field of study and institution,37100277
+university_graduates,Postsecondary graduates,Annual graduates by program and field of study,37100278
+education_attainment,Educational attainment,Highest education completed by age and gender,37100130
+undergraduate_tuition,Undergraduate tuition fees,Annual Canadian undergraduate tuition by field of study,37100120
+graduate_tuition,Graduate tuition fees,Annual Canadian graduate tuition by field of study,37100004
+international_tuition,International student tuition,Annual international undergraduate tuition by field of study,37100005
+school_graduation,High school graduation rates,On-time and extended secondary school completion rates,37100221
+education_expenditure,Education expenditure,Spending by educational institutions across levels of education,37100212
+business_counts,Business counts,Number of Canadian businesses with employees by size and industry,33101174
+small_businesses,Small businesses,Business counts by employment size and industry,33101174
+nonemployer_businesses,Nonemployer businesses,Business counts for firms without payroll employees,33101175
+business_dynamics,Business dynamics,Business entry exit and employment change across industries,33100087
+federal_finances,Federal government finances,Federal government financial operations and balance sheet,10100016
+provincial_finances,Provincial government finances,Provincial and territorial government operations and balance sheets,10100017
+municipal_finances,Municipal government finances,Local government revenue expenditure and financial positions,10100020
+public_finances,Government finance statistics,Consolidated government operations and balance sheets,10100147
+government_debt,Government debt,Monthly central government borrowing and outstanding debt,10100002
+public_health_finance,Public health sector finance,Finances of public health and social service institutions,10100018
+census_population_counts,2021 Census population and dwelling counts,2021 Census counts of population private dwellings and occupied dwellings for local areas,98100015
+census_age_structure,2021 Census age structure,2021 Census age groups and sex or gender for a named place with annual population estimates as a time trend alternative,98100034;98100036;98100030;98100031;17100005
+census_official_languages,2021 Census official language knowledge,2021 Census English French both or neither by age and geography,98100222;98100223
+census_home_language,2021 Census language spoken at home,2021 Census language spoken most often at home by age and geography,98100226;98100227
+census_mother_tongue,2021 Census mother tongue,2021 Census English French and nonofficial first languages by age and geography,98100218;98100219
+census_immigration_status,2021 Census immigrant status,2021 Census immigrant and nonimmigrant population by arrival period age and gender,98100347;98100348
+census_citizenship,2021 Census citizenship,2021 Census Canadian citizenship by immigrant status and visible minority,98100303
+census_indigenous_identity,2021 Census Indigenous identity,2021 Census First Nations Métis and Inuit identity by age and gender,98100292;98100293
+census_housing_tenure,2021 Census housing tenure,2021 Census homeowners renters and dwelling types by local area,98100239;98100240
+census_commuting_mode,2021 Census commuting mode,2021 Census how people get to work and travel to jobs by car transit walking cycling and commuting duration,98100457;98100458
+census_education,2021 Census educational attainment,2021 Census highest certificate diploma or degree by age and gender with annual educational attainment as a time trend alternative,98100386;98100384;37100130
+census_income_distribution,2021 Census income distribution,2021 Census after tax and total income groups by age and gender,98100065;98100064
+census_family_structure,2021 Census family structure,2021 Census couple and one parent families with or without children,98100123;98100124

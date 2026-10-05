@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """Build the Normalized layer (SCHEMA.md) from a Clean build and the WDS code sets.
 
-Inputs are read-only. Output goes to <clean>/normalized/<build-id>/ on the UUID-checked SSD:
+Inputs are read-only. Output goes to <first-clean>/normalized/<build-id>/ on the UUID-checked SSD:
   <code set>.parquet       frequency, subject, survey, uom, scalar, status, symbol,
-                           classification_type, terminated (from codeSets.json)
+                           classification_type, security_level, terminated (from codeSets.json)
   unit_family.parquet      unit codes seen in obs, grouped by data/ref/unit_family.csv
+  period.parquet           one row per (pid, ref_date), with period_start/end/kind
   place.parquet            places seen in the data (DGUIDs and mapped codes)
   member_place.parquet     geography member (dimension 1) -> place, with the rule that matched
-  series.parquet           one row per (pid, vector)
+  series.parquet           one row per (pid, vector), or per (pid, coordinate) when vector is empty
   table.parquet            one row per PID in the Clean cube table
   normalize_manifest.json  inputs and their hashes, per-file rows/bytes/SHA-256, stats, warnings
 
 Example:
-  .venv/bin/python -B tools/wds_normalize.py \\
-      --clean /run/media/hemanth/Kingston/statcan-derived/v0 \\
-      --codesets /run/media/hemanth/Kingston/statcan-ref/codesets/20260930T182041Z/codeSets.json \\
-      --mount-uuid 72D0-2131 --build-id n1
+  .venv/bin/python -B tools/wds_normalize.py \
+      --clean /run/media/hemanth/Kingston/statcan-derived/wds-full-1 \
+              /run/media/hemanth/Kingston/statcan-derived/census-full-1 \
+      --codesets /run/media/hemanth/Kingston/statcan-ref/codesets/20260930T182041Z/codeSets.json \
+      --mount-uuid 72D0-2131 --build-id n8 --memory-gib 6 --threads 4
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import hashlib
 import json
 import platform
 import re
@@ -34,14 +37,15 @@ from pathlib import Path
 
 import duckdb
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from wds_build import MAX_DIMS, copy_parquet, sha256_file  # noqa: E402
+from wds_build import MAX_DIMS, ROW_GROUP, copy_parquet, sha256_file  # noqa: E402
 from wds_download import Drive, StorageStop, utc_now  # noqa: E402
 
 REF = Path(__file__).resolve().parent.parent / "data" / "ref"
-RESERVE = 100 * 1024**3
-UNIT_FAMILIES = {"percent", "count", "currency", "index", "mass", "time", "volume", "rate", "other"}
+RESERVE = 150 * 1024**3
+UNIT_FAMILIES = {"percent", "count", "currency", "index", "mass", "time", "volume", "rate", "area", "length", "energy", "ratio", "other"}
 
 # Output name: (codeSets.json key, code field, English field, French field, representation field or None).
 CODE_SETS = {
@@ -54,6 +58,8 @@ CODE_SETS = {
     "symbol": ("symbol", "symbolCode", "symbolDescEn", "symbolDescFr", "symbolRepresentationEn"),
     "classification_type": ("classificationType", "classificationTypeCode", "classificationTypeEn",
                             "classificationTypeFr", None),
+    "security_level": ("securityLevel", "securityLevelCode", "securityLevelDescEn", "securityLevelDescFr",
+                       "securityLevelRepresentationEn"),
     "terminated": ("terminated", "codeId", "codeTextEn", "codeTextFr", "displayCodeEn"),
 }
 
@@ -281,10 +287,17 @@ MEMBER_PLACE_SCHEMA = pa.schema([("pid", pa.string()), ("dimension_id", pa.int32
 UNIT_FAMILY_SCHEMA = pa.schema([("uom_code", pa.int32()), ("family", pa.string()), ("symbol", pa.string()),
                                 ("base_year", pa.int32()), ("note", pa.string())])
 
-# One pass over one Clean obs file. min/max pairs let the build check that a series never changes
-# unit, scale, decimals, terminated flag, DGUID, or coordinate.
+# One pass over one Clean obs file. WDS series are keyed by vector; Census has no vector, so those rows are
+# keyed by coordinate. The key also carries its kind so a non-empty vector cannot collide with an empty-vector
+# coordinate that has the same text. min/max pairs let the build check that a series never changes unit, scale,
+# decimals, terminated flag, DGUID, coordinate, or period kind.
 SERIES_PART_SQL = """
-SELECT o.pid, o.vector, min(o.coordinate) AS coordinate, max(o.coordinate) AS coordinate_max,
+WITH obs AS (
+    SELECT *, CASE WHEN vector = '' THEN 'coordinate' ELSE 'vector' END AS series_key_kind,
+              CASE WHEN vector = '' THEN coordinate ELSE vector END AS series_key
+    FROM read_parquet('{obs}')
+)
+SELECT o.pid, min(o.vector) AS vector, min(o.coordinate) AS coordinate, max(o.coordinate) AS coordinate_max,
        {member_ids},
        min(o.uom_id) AS uom_code, max(o.uom_id) AS uom_max, min(o.scalar_id) AS scalar_code, max(o.scalar_id) AS scalar_max,
        min(o.decimals) AS decimals, max(o.decimals) AS decimals_max,
@@ -294,9 +307,123 @@ SELECT o.pid, o.vector, min(o.coordinate) AS coordinate, max(o.coordinate) AS co
        min(p.period_start) AS period_min, max(p.period_end) AS period_max,
        count(*) AS n_obs, count(*) FILTER (WHERE o.value <> '') AS n_published,
        arg_max(o.status, o.ref_date) AS last_status
-FROM read_parquet('{obs}') o JOIN periods p USING (ref_date)
-GROUP BY o.pid, o.vector
+FROM obs o JOIN periods p USING (ref_date)
+GROUP BY o.pid, o.series_key_kind, o.series_key
 """
+
+
+def direct_series_sql(pid, obs):
+    """Project a direct-path WDS file; its Clean order is not guaranteed."""
+    labels = ", ".join(f"l{k}.member_name AS label_{k}" for k in range(1, MAX_DIMS + 1))
+    joins = " ".join(f"LEFT JOIN member l{k} ON l{k}.pid = o.pid AND l{k}.dimension_id = {k} "
+                     f"AND l{k}.member_id = o.member_id_{k}" for k in range(1, MAX_DIMS + 1))
+    order = "ORDER BY o.pid, " + ", ".join("o." + c for c in MEMBER_IDS) + ", o.vector"
+    return f"""
+        SELECT o.pid, o.vector, o.coordinate, {', '.join('o.' + c for c in MEMBER_IDS)}, {labels},
+               mp.place_id, o.uom_id AS uom_code, uf.family AS unit_family,
+               o.scalar_id AS scalar_code, o.decimals, p.period_kind,
+               p.period_start AS period_min, p.period_end AS period_max,
+               1::BIGINT AS n_obs, (o.value <> '')::BIGINT AS n_published,
+               o.terminated = 't' AS terminated, o.status AS last_status
+        FROM read_parquet('{obs}') o JOIN periods p USING (ref_date)
+        {joins}
+        LEFT JOIN member_place mp ON mp.pid = o.pid AND mp.dimension_id = 1 AND mp.member_id = o.member_id_1
+        LEFT JOIN unit_family uf ON uf.uom_code = o.uom_id
+        {order}
+    """
+
+
+def census_series_sql(pid, obs, bounds):
+    """Project sorted Census cells without joins that change their physical order."""
+    labels = ", ".join(
+        f"list_extract((SELECT list(m.member_name ORDER BY i) "
+        f"FROM generate_series(1, (SELECT max(member_id) FROM member "
+        f"WHERE pid = '{pid}' AND dimension_id = {k})) ids(i) "
+        f"LEFT JOIN member m ON m.pid = '{pid}' AND m.dimension_id = {k} "
+        f"AND m.member_id = ids.i), o.member_id_{k}) AS label_{k}"
+        for k in range(1, MAX_DIMS + 1))
+    start, end, kind = bounds
+    date_sql = lambda date: f"DATE '{date.isoformat()}'" if date else "NULL::DATE"
+    return f"""
+        SELECT o.pid, o.vector, o.coordinate, {', '.join('o.' + c for c in MEMBER_IDS)}, {labels},
+               list_extract((SELECT list(mp.place_id ORDER BY i)
+                   FROM generate_series(1, (SELECT max(member_id) FROM member_place WHERE pid = '{pid}')) ids(i)
+                   LEFT JOIN member_place mp ON mp.pid = '{pid}' AND mp.member_id = ids.i), o.member_id_1) AS place_id,
+               o.uom_id AS uom_code,
+               map_extract_value((SELECT MAP(list(uom_code ORDER BY uom_code),
+                   list(family ORDER BY uom_code)) FROM unit_family), o.uom_id) AS unit_family,
+               o.scalar_id AS scalar_code, o.decimals, '{kind}' AS period_kind,
+               {date_sql(start)} AS period_min, {date_sql(end)} AS period_max,
+               1::BIGINT AS n_obs, (o.value <> '')::BIGINT AS n_published,
+               o.terminated = 't' AS terminated, o.status AS last_status
+        FROM read_parquet('{obs}') o
+    """
+
+
+def require_null_parquet_columns(path, rows, columns):
+    parquet = pq.ParquetFile(path)
+    if parquet.metadata.num_rows != rows:
+        raise ValueError(f"{path}: row count differs from Clean/source manifest")
+    for name in columns:
+        index = parquet.schema_arrow.get_field_index(name)
+        if index < 0:
+            raise ValueError(f"{path}: missing {name}")
+        for group_index in range(parquet.num_row_groups):
+            group = parquet.metadata.row_group(group_index)
+            stats = group.column(index).statistics
+            if stats is None or stats.null_count != group.num_rows:
+                raise ValueError(f"{path}: {name} is not proven null in row group {group_index}")
+
+
+def prepare_census_reuse(source, clean_inputs, codesets_sha, alias_sha, obs_paths, obs_shas, pid_rows):
+    manifest_path = source / "normalize_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    if (manifest.get("cleans") != clean_inputs or manifest["codesets"]["sha256"] != codesets_sha
+            or manifest["refs"]["data/ref/place_alias.csv"] != alias_sha):
+        raise ValueError(f"{source}: Clean, code set, or place-alias inputs differ")
+    versions = {"python": platform.python_version(), "duckdb": duckdb.__version__, "pyarrow": pa.__version__}
+    if any(manifest["tool"].get(key) != value for key, value in versions.items()):
+        raise ValueError(f"{source}: tool versions differ")
+    if manifest["files"]["series/"]["layout"] != "partitioned_parquet_directory":
+        raise ValueError(f"{source}: expected one series part per PID")
+    pids = sorted(pid for pid in obs_paths if pid.startswith("98"))
+    source_pids = sorted(path[7:-8] for path in manifest["files"] if path.startswith("series/98") and path.endswith(".parquet"))
+    if not pids or source_pids != pids:
+        raise ValueError(f"{source}: Census series PIDs differ")
+    total_bytes = 0
+    for i, pid in enumerate(pids, 1):
+        obs = obs_paths[pid]
+        part = source / "series" / f"{pid}.parquet"
+        entry = manifest["files"][f"series/{pid}.parquet"]
+        if entry["rows"] != pid_rows[pid] or part.stat().st_size != entry["bytes"]:
+            raise ValueError(f"{pid}: source Census series differs from Clean or source manifest")
+        require_null_parquet_columns(obs, pid_rows[pid], ("uom_id",))
+        require_null_parquet_columns(part, pid_rows[pid], ("uom_code", "unit_family"))
+        if sha256_file(obs) != obs_shas[pid] or sha256_file(part) != entry["sha256"]:
+            raise ValueError(f"{pid}: Clean or source Census part SHA-256 mismatch")
+        total_bytes += entry["bytes"]
+        if i % 25 == 0 or i == len(pids):
+            print(f"verified Census inputs [{i}/{len(pids)}] {pid}", flush=True)
+    record = {"dir": str(source), "build_id": manifest["build_id"],
+              "manifest_sha256": sha256_file(manifest_path), "parts": len(pids),
+              "rows": sum(pid_rows[pid] for pid in pids), "bytes": total_bytes,
+              "checks": "Clean obs and source part SHA-256; null Clean uom_id and source uom_code/unit_family; shared period/place/member_place SHA-256; destination part SHA-256"}
+    return manifest, record
+
+
+def copy_verified_part(source, dest, expected, drive):
+    drive.check(expected["bytes"] + 1024 * 1024)
+    temporary = dest.with_name(dest.name + ".tmp")
+    try:
+        shutil.copyfile(source, temporary)  # exFAT has no hardlinks or reflinks.
+        meta = {"bytes": temporary.stat().st_size, "sha256": sha256_file(temporary)}
+        if meta != {"bytes": expected["bytes"], "sha256": expected["sha256"]}:
+            raise ValueError(f"{source}: copied Census part SHA-256/size differs from source manifest")
+        temporary.replace(dest)
+        drive.check()
+        return meta
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def sql_path(path):
@@ -306,13 +433,28 @@ def sql_path(path):
     return text
 
 
+def sql_paths(paths):
+    return "[" + ", ".join(f"'{sql_path(p)}'" for p in paths) + "]"
+
+
+def arg_list(value):
+    return value if isinstance(value, (list, tuple)) else [value]
+
+
 def run(args):
     started = time.monotonic()
-    clean = Path(args.clean).absolute()
+    checkpoint = started
+
+    def stage(name):
+        nonlocal checkpoint
+        now = time.monotonic()
+        print(f"stage {name}: {now - checkpoint:.1f}s (total {now - started:.1f}s)", flush=True)
+        checkpoint = now
+    cleans = [Path(p).absolute() for p in arg_list(args.clean)]
     codesets = Path(args.codesets).absolute()
-    clean_drive = Drive(clean, args.mount_uuid, reserve=0)
+    clean_drives = [Drive(clean, args.mount_uuid, reserve=0) for clean in cleans]
     Drive(codesets, args.mount_uuid, reserve=0)
-    out = clean / "normalized" / args.build_id
+    out = cleans[0] / "normalized" / args.build_id
     if out.exists():
         raise StorageStop(f"normalized build directory exists: {out}")
     drive = Drive(out, args.mount_uuid, RESERVE)
@@ -321,18 +463,47 @@ def run(args):
     codesets_sha = sha256_file(codesets)
     if codesets_sha != expected:
         raise ValueError(f"{codesets}: sha256 {codesets_sha} differs from .sha256 file {expected}")
-    clean_manifest_path = clean / "build_manifest.json"
-    clean_manifest = json.loads(clean_manifest_path.read_text())
-    built = sorted(pid for pid, r in clean_manifest["tables"].items() if r["status"] == "ok")
-    missing = [pid for pid in built if not (clean / "obs" / f"{pid}.parquet").exists()]
-    if missing:
-        raise ValueError(f"Clean manifest says ok but obs file is missing: {missing[:10]}")
+    clean_inputs = []
+    obs_paths = {}
+    pid_clean = {}
+    pid_rows = {}
+    obs_shas = {}
+    for clean in cleans:
+        manifest_path = clean / "build_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        ok = sorted(pid for pid, r in manifest["tables"].items() if r["status"] == "ok")
+        missing = [pid for pid in ok if not (clean / "obs" / f"{pid}.parquet").exists()]
+        if missing:
+            raise ValueError(f"Clean manifest {manifest['build_id']} says ok but obs file is missing: {missing[:10]}")
+        duplicate = sorted(set(ok) & set(obs_paths))
+        if duplicate:
+            raise ValueError(f"PIDs appear in more than one Clean input: {duplicate[:10]}")
+        for pid in ok:
+            obs_paths[pid] = clean / "obs" / f"{pid}.parquet"
+            pid_clean[pid] = manifest["build_id"]
+            pid_rows[pid] = manifest["tables"][pid].get("row_count")
+            obs_shas[pid] = manifest["tables"][pid]["parquet"]["sha256"]
+        clean_inputs.append({"dir": str(clean), "build_id": manifest["build_id"], "manifest_sha256": sha256_file(manifest_path),
+                             "tables_ok": len(ok), "family": manifest.get("family")})
+    built = sorted(obs_paths)
+    refs = {f"data/ref/{name}": sha256_file(REF / name) for name in ("unit_family.csv", "place_alias.csv")}
     unit_families = read_unit_families(REF / "unit_family.csv")
     aliases = read_aliases(REF / "place_alias.csv")
+    if refs != {f"data/ref/{name}": sha256_file(REF / name) for name in ("unit_family.csv", "place_alias.csv")}:
+        raise ValueError("reference CSV changed while it was read")
     code_sets = json.loads(codesets.read_text())["object"]
+    reuse_source = getattr(args, "reuse_census_from", None)
+    reuse_manifest = reuse_record = None
+    if reuse_source:
+        reuse_dir = Path(reuse_source).absolute()
+        Drive(reuse_dir, args.mount_uuid, reserve=0)
+        reuse_manifest, reuse_record = prepare_census_reuse(
+            reuse_dir, clean_inputs, codesets_sha, refs["data/ref/place_alias.csv"], obs_paths, obs_shas, pid_rows)
+        print(f"verified {reuse_record['parts']} Census parts from {reuse_dir}, "
+              f"{reuse_record['bytes']:,} bytes for copy", flush=True)
 
     tmp = out / "tmp"
-    drive.mkdir(tmp / "series")
+    drive.mkdir(tmp / "period")
     con = duckdb.connect(sql_path(tmp / "work.duckdb"))
     con.execute(f"SET temp_directory = '{sql_path(tmp / 'spill')}'")
     con.execute(f"SET memory_limit = '{args.memory_gib}GB'")
@@ -354,12 +525,15 @@ def run(args):
             con.execute("DROP TABLE staged")
         print(f"wrote {name}.parquet rows={rows}", flush=True)
 
-    # Clean catalogue, exact duplicate rows removed (v0 holds 10100139's metadata twice).
-    clean_drive.check()
+    # Clean catalogue, exact duplicate rows removed (v0 holds 10100139's metadata twice). Multiple Clean inputs
+    # share the same inventory catalogue but have different metadata PIDs, so read all and de-duplicate.
+    for d in clean_drives:
+        d.check()
     for name in ("cube", "inventory_dimension", "dimension", "member", "note"):
-        path = sql_path(clean / "catalogue" / f"{name}.parquet")
-        con.execute(f"CREATE TABLE {name} AS SELECT DISTINCT * FROM read_parquet('{path}')")
-        total = con.execute(f"SELECT count(*) FROM read_parquet('{path}')").fetchone()[0]
+        paths = [clean / "catalogue" / f"{name}.parquet" for clean in cleans]
+        source = f"read_parquet({sql_paths(paths)})"
+        con.execute(f"CREATE TABLE {name} AS SELECT DISTINCT * FROM {source}")
+        total = con.execute(f"SELECT count(*) FROM {source}").fetchone()[0]
         kept = con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]
         if total != kept:
             warnings.append({"type": "clean_catalogue_duplicate_rows", "table": name, "rows_dropped": total - kept})
@@ -376,11 +550,20 @@ def run(args):
         con.unregister("code_set")
         write(name, f"SELECT * FROM cs_{name} ORDER BY code")
 
-    # Series pass: one Clean obs file at a time.
+    stage("catalogue and code sets")
+
+    # Series first pass: one Clean obs file at a time. Keep only compact stats in memory/disk. Do not keep
+    # per-PID series parts: Census has one series per cell, so retained parts plus final series would breach reserve.
     frequency = dict(con.execute("SELECT pid, frequency_code FROM cube").fetchall())
+    dguids = defaultdict(set)
+    present_units = set()
+    table_stats = []
+    direct_series_pids = set()
+    period_kind_counts = defaultdict(lambda: [0, 0])
     for i, pid in enumerate(built, 1):
-        clean_drive.check()
-        obs = sql_path(clean / "obs" / f"{pid}.parquet")
+        pid_started = time.monotonic()
+        clean_drives[0].check()
+        obs = sql_path(obs_paths[pid])
         ref_dates = [r[0] for r in con.execute(f"SELECT DISTINCT ref_date FROM read_parquet('{obs}') ORDER BY 1").fetchall()]
         periods = [period(r, frequency.get(pid)) for r in ref_dates]
         unknown = Counter(ref_date_shape(r) for r, p in zip(ref_dates, periods) if p[0] is None)
@@ -389,27 +572,90 @@ def run(args):
         con.register("periods", pa.Table.from_arrays(
             [pa.array(ref_dates, pa.string())] + [pa.array([p[k] for p in periods], PERIOD_SCHEMA.field(k + 1).type)
                                                   for k in range(3)], schema=PERIOD_SCHEMA))
-        part = sql_path(tmp / "series" / f"{pid}.parquet")
-        drive.check()
-        con.execute(f"COPY ({SERIES_PART_SQL.format(member_ids=', '.join(f'min(o.{c}) AS {c}' for c in MEMBER_IDS), obs=obs)}) "
-                    f"TO '{part}' (FORMAT PARQUET)")
+        period_part = sql_path(tmp / "period" / f"{pid}.parquet")
+        con.execute(f"COPY (SELECT '{pid}' AS pid, ref_date, period_start, period_end, period_kind FROM periods ORDER BY ref_date) "
+                    f"TO '{period_part}' (FORMAT PARQUET)")
+        row_count, vector_nonempty = con.execute(
+            f"SELECT count(*)::BIGINT, count(*) FILTER (WHERE vector <> '') FROM read_parquet('{obs}')").fetchone()
+        if vector_nonempty == 0 and len(ref_dates) == 1:
+            direct_series_pids.add(pid)
+            kind = periods[0][2]
+            period_kind_counts[kind][0] += row_count
+            period_kind_counts[kind][1] += row_count
+            for member_id, low, high in con.execute(
+                    f"SELECT member_id_1, min(dguid), max(dguid) FROM read_parquet('{obs}') GROUP BY member_id_1").fetchall():
+                dguids[(pid, member_id)].update({low, high})
+            unit_codes = [r[0] for r in con.execute(
+                f"SELECT DISTINCT uom_id FROM read_parquet('{obs}') WHERE uom_id IS NOT NULL ORDER BY 1").fetchall()]
+            present_units.update(unit_codes)
+            table_stats.append({"pid": pid, "row_count": row_count, "series_count": row_count,
+                                "period_min": periods[0][0], "period_max": periods[0][1],
+                                "unit_families": sorted({unit_families.get(c, {'family': 'other'})['family']
+                                                         for c in unit_codes})})
+            if row_count != pid_rows[pid]:
+                warnings.append({"type": "row_count_differs_from_clean_manifest", "pid": pid, "series_sum": row_count,
+                                 "clean": pid_rows[pid]})
+            con.unregister("periods")
+            print(f"[{i}/{len(built)}] {pid} series scan direct {time.monotonic() - pid_started:.1f}s", flush=True)
+            continue
+        con.execute(f"CREATE OR REPLACE TABLE series_pid AS "
+                    f"{SERIES_PART_SQL.format(member_ids=', '.join(f'min(o.{c}) AS {c}' for c in MEMBER_IDS), obs=obs)}")
+        bad = con.execute(f"""
+            WITH s AS (
+                SELECT *, CASE WHEN vector = '' THEN 'coordinate' ELSE 'vector' END AS series_key_kind,
+                          CASE WHEN vector = '' THEN coordinate ELSE vector END AS series_key
+                FROM series_pid
+            ), g AS (
+                SELECT CASE WHEN vector = '' THEN 'coordinate' ELSE 'vector' END AS series_key_kind,
+                       CASE WHEN vector = '' THEN coordinate ELSE vector END AS series_key, count(*) AS n_obs
+                FROM read_parquet('{obs}') GROUP BY 1, 2
+            )
+            SELECT s.pid, s.vector, s.coordinate, s.n_obs AS series_n_obs, coalesce(g.n_obs, 0) AS observed_n_obs
+            FROM s LEFT JOIN g USING (series_key_kind, series_key)
+            WHERE s.n_obs IS DISTINCT FROM coalesce(g.n_obs, 0)
+            ORDER BY s.pid, s.coordinate LIMIT 10
+        """).fetchall()
         con.unregister("periods")
-        print(f"[{i}/{len(built)}] {pid} series pass", flush=True)
-    parts = f"read_parquet('{sql_path(tmp / 'series')}/*.parquet')"
-    con.execute(f"CREATE TABLE series_part AS SELECT * FROM {parts}")
+        if bad:
+            raise ValueError(f"{pid}: series n_obs does not match grouped observations: {bad}")
 
-    checks = ["coordinate", "uom", "scalar", "decimals", "terminated", "dguid", "kind"]
-    lows = {"coordinate": "coordinate", "uom": "uom_code", "scalar": "scalar_code", "decimals": "decimals"}
-    for pid, *counts in con.execute(
-            "SELECT pid, " + ", ".join(f"count(*) FILTER (WHERE {lows.get(c, c + '_min')} IS DISTINCT FROM {c}_max)"
-                                       for c in checks) + " FROM series_part GROUP BY pid ORDER BY pid").fetchall():
+        checks = ["coordinate", "uom", "scalar", "decimals", "terminated", "dguid", "kind"]
+        lows = {"coordinate": "coordinate", "uom": "uom_code", "scalar": "scalar_code", "decimals": "decimals"}
+        counts = con.execute("SELECT " + ", ".join(
+            f"count(*) FILTER (WHERE {lows.get(c, c + '_min')} IS DISTINCT FROM {c}_max)" for c in checks) +
+                             " FROM series_pid").fetchone()
         varying = {c: n for c, n in zip(checks, counts) if n}
         if varying:
             warnings.append({"type": "series_values_vary", "pid": pid, "series_by_field": varying})
 
-    # Unit families for the codes present in obs.
-    present = [r[0] for r in con.execute("SELECT DISTINCT uom_code FROM series_part UNION SELECT DISTINCT uom_max "
-                                         "FROM series_part ORDER BY 1").fetchall()]
+        for member_id, low, high in con.execute(
+                "SELECT member_id_1, min(dguid_min), max(dguid_max) FROM series_pid GROUP BY member_id_1").fetchall():
+            dguids[(pid, member_id)].update({low, high})
+        unit_codes = [r[0] for r in con.execute(
+            "SELECT DISTINCT uom_code FROM series_pid WHERE uom_code IS NOT NULL "
+            "UNION SELECT DISTINCT uom_max FROM series_pid WHERE uom_max IS NOT NULL ORDER BY 1").fetchall()]
+        present_units.update(unit_codes)
+        row_count, series_count, period_min, period_max = con.execute(
+            "SELECT sum(n_obs)::BIGINT, count(*), min(period_min), max(period_max) FROM series_pid").fetchone()
+        table_stats.append({"pid": pid, "row_count": row_count, "series_count": series_count,
+                            "period_min": period_min, "period_max": period_max,
+                            "unit_families": sorted({unit_families.get(c, {'family': 'other'})['family'] for c in unit_codes})})
+        if row_count != pid_rows[pid]:
+            warnings.append({"type": "row_count_differs_from_clean_manifest", "pid": pid, "series_sum": row_count,
+                             "clean": pid_rows[pid]})
+        for kind, n, obs_count in con.execute(
+                "SELECT CASE WHEN kind_min = kind_max THEN kind_min ELSE 'other' END, count(*), sum(n_obs)::BIGINT "
+                "FROM series_pid GROUP BY 1").fetchall():
+            period_kind_counts[kind][0] += n
+            period_kind_counts[kind][1] += obs_count
+        con.execute("DROP TABLE series_pid")
+        print(f"[{i}/{len(built)}] {pid} series scan {time.monotonic() - pid_started:.1f}s", flush=True)
+
+    stage("period and series scan")
+
+    # Unit families for the codes present in obs. Census rows have null units; keep their series unit fields null
+    # and do not create a synthetic unit_family row.
+    present = sorted(present_units)
     unknown_units = [c for c in present if c not in unit_families]
     if unknown_units:
         warnings.append({"type": "unit_code_not_in_unit_family_csv", "uom_codes": unknown_units})
@@ -424,11 +670,14 @@ def run(args):
     con.unregister("uf_rows")
     write("unit_family", "SELECT * FROM unit_family ORDER BY uom_code")
 
+    stage("unit families")
+
+    period_parts = f"read_parquet('{sql_path(tmp / 'period')}/*.parquet')"
+    write("period", f"SELECT * FROM {period_parts} ORDER BY pid, ref_date")
+
+    stage("period output")
+
     # Places: geography members (dimension 1) of built tables.
-    dguids = defaultdict(set)
-    for pid, member_id, low, high in con.execute(
-            "SELECT pid, member_id_1, min(dguid_min), max(dguid_max) FROM series_part GROUP BY ALL").fetchall():
-        dguids[(pid, member_id)].update({low, high})
     members = [{"pid": pid, "member_id": member_id, "member_name": name, "classification_code": code,
                 "parent_member_id": parent, "dguids": dguids.get((pid, member_id), set())}
                for pid, member_id, name, code, parent in con.execute(
@@ -445,24 +694,101 @@ def run(args):
     if match_counts.get("none"):
         warnings.append({"type": "geography_members_without_place", "members": match_counts["none"]})
 
-    # Series.
+    stage("place and member_place")
+
+    if reuse_manifest:
+        for name in ("period", "place", "member_place"):
+            key = f"{name}.parquet"
+            if files[key]["sha256"] != reuse_manifest["files"][key]["sha256"]:
+                raise ValueError(f"{key}: differs from source; Census series cannot be reused")
+        missing_direct = sorted(pid for pid in obs_paths if pid.startswith("98") and pid not in direct_series_pids)
+        if missing_direct:
+            raise ValueError(f"Census series are not one observation per coordinate: {missing_direct[:10]}")
+
+    con.register("stats_rows", pa.Table.from_pylist(table_stats, schema=pa.schema([
+        ("pid", pa.string()), ("row_count", pa.int64()), ("series_count", pa.int64()),
+        ("period_min", pa.date32()), ("period_max", pa.date32()), ("unit_families", pa.list_(pa.string())),
+    ])))
+    con.execute("CREATE TABLE series_stats AS SELECT * FROM stats_rows")
+    con.unregister("stats_rows")
+
+    # Series output: one DuckDB-compressed Parquet part per PID. A single append-only Parquet file required
+    # PyArrow streaming and compressed 2.6x larger on n4; per-PID DuckDB COPY keeps the SSD reserve real.
     labels = ", ".join(f"l{k}.member_name AS label_{k}" for k in range(1, MAX_DIMS + 1))
     label_joins = " ".join(f"LEFT JOIN member l{k} ON l{k}.pid = s.pid AND l{k}.dimension_id = {k} "
                            f"AND l{k}.member_id = s.member_id_{k}" for k in range(1, MAX_DIMS + 1))
-    write("series", f"""
-        SELECT s.pid, s.vector, s.coordinate, {', '.join('s.' + c for c in MEMBER_IDS)}, {labels},
-               mp.place_id, s.uom_code, uf.family AS unit_family, s.scalar_code, s.decimals,
-               CASE WHEN s.kind_min = s.kind_max THEN s.kind_min ELSE 'other' END AS period_kind,
-               s.period_min, s.period_max, s.n_obs, s.n_published, s.terminated_max = 't' AS terminated, s.last_status
-        FROM series_part s {label_joins}
-        LEFT JOIN member_place mp ON mp.pid = s.pid AND mp.member_id = s.member_id_1
-        LEFT JOIN unit_family uf ON uf.uom_code = s.uom_code
-        ORDER BY s.pid, {', '.join('s.' + c for c in MEMBER_IDS)}, s.vector""")
-    series = f"read_parquet('{sql_path(out / 'series.parquet')}')"
+    series_dir = out / "series"
+    if series_dir.exists():
+        shutil.rmtree(series_dir)
+    if (out / "series.parquet").exists():
+        (out / "series.parquet").unlink()
+    drive.mkdir(series_dir)
+    series_rows = 0
+    series_bytes = 0
+    series_hashes = []
+    con.execute("SET threads = 1")
+    try:
+        for i, pid in enumerate(built, 1):
+            pid_started = time.monotonic()
+            drive.check()
+            obs = sql_path(obs_paths[pid])
+            ref_dates = [r[0] for r in con.execute(f"SELECT DISTINCT ref_date FROM read_parquet('{obs}') ORDER BY 1").fetchall()]
+            periods = [period(r, frequency.get(pid)) for r in ref_dates]
+            con.register("periods", pa.Table.from_arrays(
+                [pa.array(ref_dates, pa.string())] + [pa.array([p[k] for p in periods], PERIOD_SCHEMA.field(k + 1).type)
+                                                      for k in range(3)], schema=PERIOD_SCHEMA))
+            part = series_dir / f"{pid}.parquet"
+            # Census Clean verifies strict member-ID order. Constant maps avoid joins that
+            # otherwise reorder cells; WDS keeps its original sorted direct projection.
+            if reuse_manifest and pid.startswith("98"):
+                entry = reuse_manifest["files"][f"series/{pid}.parquet"]
+                rows = entry["rows"]
+                meta = copy_verified_part(reuse_dir / "series" / f"{pid}.parquet", part, entry, drive)
+                con.unregister("periods")
+            elif pid in direct_series_pids:
+                rows = con.execute(f"SELECT count(*) FROM read_parquet('{obs}')").fetchone()[0]
+                meta = copy_parquet(con, drive, census_series_sql(pid, obs, periods[0])
+                                    if pid.startswith("98") else direct_series_sql(pid, obs), part)
+                con.unregister("periods")
+            else:
+                con.execute(f"CREATE OR REPLACE TABLE series_pid AS "
+                            f"{SERIES_PART_SQL.format(member_ids=', '.join(f'min(o.{c}) AS {c}' for c in MEMBER_IDS), obs=obs)}")
+                rows = con.execute("SELECT count(*) FROM series_pid").fetchone()[0]
+                meta = copy_parquet(con, drive, f"""
+                    SELECT s.pid, s.vector, s.coordinate, {', '.join('s.' + c for c in MEMBER_IDS)}, {labels},
+                           mp.place_id, s.uom_code, uf.family AS unit_family, s.scalar_code, s.decimals,
+                           CASE WHEN s.kind_min = s.kind_max THEN s.kind_min ELSE 'other' END AS period_kind,
+                           s.period_min, s.period_max, s.n_obs, s.n_published, s.terminated_max = 't' AS terminated, s.last_status
+                    FROM series_pid s {label_joins}
+                    LEFT JOIN member_place mp ON mp.pid = s.pid AND mp.dimension_id = 1 AND mp.member_id = s.member_id_1
+                    LEFT JOIN unit_family uf ON uf.uom_code = s.uom_code
+                    ORDER BY s.pid, {', '.join('s.' + c for c in MEMBER_IDS)}, s.vector
+                """, part)
+                con.unregister("periods")
+                con.execute("DROP TABLE series_pid")
+            files[f"series/{pid}.parquet"] = {"rows": rows, **meta}
+            series_rows += rows
+            series_bytes += meta["bytes"]
+            series_hashes.append((pid, meta["sha256"]))
+            action = "reused" if reuse_manifest and pid.startswith("98") else "write"
+            print(f"[{i}/{len(built)}] {pid} series {action} rows={rows} {time.monotonic() - pid_started:.1f}s", flush=True)
+    finally:
+        con.execute(f"SET threads = {args.threads}")
+    files["series/"] = {
+        "layout": "partitioned_parquet_directory",
+        "partition": "pid",
+        "rows": series_rows,
+        "bytes": series_bytes,
+        "sha256": hashlib.sha256("".join(f"{pid} {sha}\n" for pid, sha in series_hashes).encode()).hexdigest(),
+    }
+
+    stage("series output")
 
     # Table: one row per PID in the Clean cube table.
-    con.execute("CREATE TABLE built AS SELECT unnest(?::VARCHAR[]) AS pid", [built])
-    con.execute("CREATE TABLE clean_build AS SELECT ?::VARCHAR AS id", [clean_manifest["build_id"]])
+    con.register("built_rows", pa.Table.from_pylist([{"pid": pid, "clean_build_id": pid_clean[pid]} for pid in built],
+                                                   schema=pa.schema([("pid", pa.string()), ("clean_build_id", pa.string())])))
+    con.execute("CREATE TABLE built AS SELECT * FROM built_rows")
+    con.unregister("built_rows")
     unknown_codes = con.execute("""
         SELECT (SELECT list_sort(list(DISTINCT frequency_code)) FROM cube WHERE frequency_code NOT IN (SELECT code FROM cs_frequency)),
                (SELECT list_sort(list(DISTINCT c)) FROM (SELECT unnest(subject_codes) c FROM cube) WHERE c NOT IN (SELECT code FROM cs_subject)),
@@ -472,9 +798,7 @@ def run(args):
         if codes:
             warnings.append({"type": f"{kind}_code_not_in_code_set", "codes": codes})
     write("table", f"""
-        WITH s AS (SELECT pid, sum(n_obs)::BIGINT AS row_count, count(*) AS series_count, min(period_min) AS period_min,
-                          max(period_max) AS period_max, list_sort(list(DISTINCT unit_family)) AS unit_families
-                   FROM {series} GROUP BY pid),
+        WITH s AS (SELECT * FROM series_stats),
              p AS (SELECT mp.pid, count(*) FILTER (WHERE mp.match <> 'none') AS n_places_mapped,
                           count(*) FILTER (WHERE mp.match = 'none') AS n_places_unmapped,
                           coalesce(list_sort(list(DISTINCT pl.level) FILTER (WHERE pl.level IS NOT NULL)), []::VARCHAR[]) AS place_levels
@@ -497,9 +821,13 @@ def run(args):
                coalesce(subj.subject_en, []::VARCHAR[]) AS subject_en,
                coalesce(surv.survey_en, []::VARCHAR[]) AS survey_en,
                b.pid IS NOT NULL AS queryable,
-               (SELECT id FROM clean_build) AS clean_build_id,
+               b.clean_build_id,
                s.row_count, s.series_count, s.period_min, s.period_max, s.unit_families,
                p.place_levels, p.n_places_mapped, p.n_places_unmapped,
+               c.title_en AS search_title,
+               concat_ws(' | ', dims.t, idims.t) AS search_dimensions,
+               mems.t AS search_members,
+               notes.t AS search_notes,
                concat_ws(' | ', c.title_en, coalesce(dims.t, idims.t), mems.t, notes.t) AS search_text
         FROM cube c
         LEFT JOIN cs_frequency f ON f.code = c.frequency_code
@@ -508,21 +836,26 @@ def run(args):
         LEFT JOIN mems USING (pid) LEFT JOIN notes USING (pid)
         ORDER BY c.pid""")
 
-    for pid, rows in con.execute(f"SELECT pid, sum(n_obs) FROM {series} GROUP BY pid ORDER BY pid").fetchall():
-        if rows != clean_manifest["tables"][pid].get("row_count"):
-            warnings.append({"type": "row_count_differs_from_clean_manifest", "pid": pid, "series_sum": rows,
-                             "clean": clean_manifest["tables"][pid].get("row_count")})
-    kinds = {kind: {"series": n, "obs": obs} for kind, n, obs in con.execute(
-        f"SELECT period_kind, count(*), sum(n_obs)::BIGINT FROM {series} GROUP BY 1 ORDER BY 1").fetchall()}
+    stage("table output")
+
+    kinds = {kind: {"series": n, "obs": obs} for kind, (n, obs) in sorted(period_kind_counts.items())}
+    if refs != {f"data/ref/{name}": sha256_file(REF / name) for name in ("unit_family.csv", "place_alias.csv")}:
+        raise ValueError("reference CSV changed during normalization")
+    if reuse_record and sha256_file(reuse_dir / "normalize_manifest.json") != reuse_record["manifest_sha256"]:
+        raise ValueError(f"{reuse_dir}: source manifest changed during normalization")
     con.close()
     shutil.rmtree(tmp)
 
+    clean_legacy = clean_inputs[0] if len(clean_inputs) == 1 else {
+        "dir": str(cleans[0]), "build_id": "+".join(c["build_id"] for c in clean_inputs),
+        "manifest_sha256": None, "tables_ok": len(built), "inputs": clean_inputs,
+    }
     manifest = {
         "build_id": args.build_id, "built_at_utc": utc_now(),
-        "clean": {"dir": str(clean), "build_id": clean_manifest["build_id"],
-                  "manifest_sha256": sha256_file(clean_manifest_path), "tables_ok": len(built)},
+        "clean": clean_legacy,
+        "cleans": clean_inputs,
         "codesets": {"path": str(codesets), "sha256": codesets_sha},
-        "refs": {f"data/ref/{name}": sha256_file(REF / name) for name in ("unit_family.csv", "place_alias.csv")},
+        "refs": refs,
         "tool": {"script": "tools/wds_normalize.py", "python": platform.python_version(), "duckdb": duckdb.__version__,
                  "pyarrow": pa.__version__, "memory_gib": args.memory_gib, "threads": args.threads},
         "files": files,
@@ -531,17 +864,22 @@ def run(args):
         "warnings": warnings,
         "seconds": round(time.monotonic() - started, 1),
     }
+    if reuse_record:
+        manifest["reused_series"] = reuse_record
+
     drive.atomic_json(out / "normalize_manifest.json", manifest)
+    stage("cleanup and manifest")
     print(f"Normalized {args.build_id}: {len(files)} files, {len(warnings)} warnings -> {out}")
     return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--clean", required=True, help="Clean build directory (build_manifest.json, catalogue/, obs/)")
+    parser.add_argument("--clean", required=True, nargs="+", help="Clean build directory/directories (build_manifest.json, catalogue/, obs/)")
     parser.add_argument("--codesets", required=True, help="captured codeSets.json; its sibling .sha256 file is checked")
     parser.add_argument("--mount-uuid", required=True, help="filesystem UUID that must back the inputs and the output")
     parser.add_argument("--build-id", required=True, help="output goes to <clean>/normalized/<build-id>/")
+    parser.add_argument("--reuse-census-from", help="copy verified null-unit Census series parts from this Normalized build")
     parser.add_argument("--memory-gib", type=int, default=4, help="DuckDB memory limit; spills go to the output tmp/")
     parser.add_argument("--threads", type=int, default=2, help="DuckDB threads")
     args = parser.parse_args()

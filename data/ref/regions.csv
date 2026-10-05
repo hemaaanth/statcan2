@@ -1,0 +1,13 @@
+region_id,label,kind,members,aliases,source,note
+provinces,Provinces,common,10;11;12;13;24;35;46;47;48;59,province;the provinces,Project region design,Ten provincial PT codes
+territories,Territories,common,60;61;62,the north;territory,Project region design,Three territorial PT codes
+atlantic,Atlantic provinces,common,10;11;12;13,atlantic canada;atlantic,Project region design,
+maritimes,Maritimes,common,11;12;13,the maritimes;maritime provinces,Project region design,
+central,Central Canada,common,24;35,central canada,Project region design,
+prairies,Prairies,common,46;47;48,prairie provinces;the prairies,Project region design,
+western,Western Canada,common,46;47;48;59,western canada;the west,Project region design,
+west_coast,West Coast,common,59,west coast;british columbia;bc,Project region design,BC only in this PT-code grouping
+eastern,Eastern Canada,common,10;11;12;13;24;35,eastern canada;the east,Project region design,
+canadian_shield,Canadian Shield,physiographic,,the canadian shield,Project region design,Does not follow province borders; no StatCan table publishes this region as specified
+great_lakes,Great Lakes,physiographic,,great lakes basin,Project region design,Does not follow province borders; no StatCan table publishes this region as specified
+arctic,Arctic,physiographic,,canadian arctic,Project region design,Does not follow province borders; no StatCan table publishes this region as specified

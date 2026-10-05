@@ -1,43 +1,466 @@
 uom_code,family,symbol,base_year,note
+0,other,,,code set has no unit name; not additive
+1,index,,1981,
+2,index,,,base month 1982-03 (not a single-year index base)
+3,index,,1986,
+4,index,,,base month 1988-12 (not a single-year index base)
+5,currency,CAD,1992,
+6,rate,,1992,
+7,index,,1992,
+8,index,,,base month 1994-12 (not a single-year index base)
+9,index,,1996,
+10,index,,,base month 1997-12 (not a single-year index base)
+11,index,,1997,
+12,index,,1999,
+13,index,,2000,
+14,currency,CAD,2002,
+15,currency,CAD,,constant dollars for 2002/2003; base is a two-year period
+16,index,,,base month 2002-12 (not a single-year index base)
 17,index,,2002,unit name is only the base (2002=100)
+18,currency,CAD,2007,
+19,index,,,base month 2007-04 (not a single-year index base)
+20,index,,2007,
+21,index,,2010,
+22,index,,,base month 2011-04 (not a single-year index base)
+23,currency,CAD,2012,
+24,index,,,base month January 2012 (2012/01=100)
+25,index,,2013,
+26,count,,,
+27,count,,,
+28,area,,,
+29,rate,,,
+30,rate,,,
+31,count,,,
+32,rate,,,average duration; not additive
+33,count,,,
+34,volume,,,
+35,rate,,,
+36,count,,,
+37,count,,,
+38,count,,,
+39,count,,,
+40,volume,,,board feet measure lumber volume
+41,count,,,
 42,volume,bu,,
+43,rate,,,
+44,count,,,
+45,count,,,
+46,index,,,Canada is the comparison base; no base year
+47,currency,CAD,,
+48,rate,,,
+49,rate,,,
+50,count,,,
 51,count,,,cars
+52,count,,,
+53,count,,,
+54,rate,,,
+55,currency,¢,,
+56,rate,,,
+57,rate,,,
+58,rate,,,
+59,rate,,,
+60,currency,CAD,2002,
+61,rate,,2002,
+62,currency,CAD,2007,scale is in the unit name; check SCALAR_ID to avoid double scaling
+63,rate,,2007,
+64,count,,,
+65,count,,,
+66,count,,,
+67,count,,,
+68,count,,,
+69,count,,,
+70,count,,,
+71,rate,,,
 72,volume,m3,,
+73,volume,,,
+74,volume,,,
 75,currency,CAD,,current dollars
+76,count,,,
+77,time,d,,mostly an average or median duration; not additive
+78,other,,,temperature is not additive
+79,count,,,
+80,rate,,,
 81,currency,CAD,,
-108,currency,CAD/cwt,,price per hundredweight
-113,currency,CAD/kg,,price per kilogram
+82,rate,,,
+83,rate,,,
+84,rate,,,
+85,rate,,,
+86,rate,,,
+87,rate,,,
+88,rate,,,
+89,rate,,,
+90,rate,,,
+91,rate,,,
+92,rate,,,
+93,rate,,,
+94,rate,,,
+95,rate,,,
+96,rate,,,
+97,rate,,,
+98,rate,,,
+99,rate,,,
+100,rate,,,
+101,rate,,,
+102,rate,,,
+103,rate,,,
+104,rate,,,
+105,rate,,,
+106,rate,,,
+107,rate,,,
+108,rate,CAD/cwt,,price per hundredweight
+109,rate,,,
+110,rate,,,
+111,rate,,,
+112,rate,,,
+113,rate,CAD/kg,,price per kilogram
+114,rate,,,
+115,rate,,,
+116,rate,,,
+117,rate,,,
+118,rate,,,
+119,rate,,,
+120,rate,,,
+121,rate,,,
+122,rate,,,
+123,rate,,,
+124,index,,1972,dollar-labelled index; 1972=100
+125,index,,1981,dollar-labelled index; 1981=100
+126,index,,1982,dollar-labelled index; 1982=100
+127,index,,1986,dollar-labelled index; 1986=100
+128,currency,CAD,,year qualifier is 1992; constant-dollar meaning is not explicit
+129,count,,,
+130,rate,,,
+131,time,,,duration with no time unit stated
+132,count,,,
+133,count,,,
+134,count,,,
+135,count,,,
+136,count,,,
+137,time,,,
+138,count,,,
+139,count,,,
+140,count,,,
+141,count,,,
+142,volume,,,
+143,energy,GJ,,
+144,rate,,,
+145,volume,,,
+146,energy,GWh,,
+147,mass,,,
 148,count,,,head of livestock
+149,area,ha,,
+150,other,,,upper confidence-interval bound; not additive
+151,count,,,
 152,time,h,,
+153,time,h,,scale is in the unit name; check SCALAR_ID to avoid double scaling
+154,count,,,
+155,mass,,,hundredweight standard is not stated
+156,mass,,,hundredweight standard is not stated
+157,mass,,,hundredweight standard is not stated
+158,rate,,,
+159,rate,,,
 160,index,,,base not stated in the unit name
+161,index,,1926,
+162,index,,,two index bases (1948 and 1968); no single base year
+163,index,,1961,
 164,index,,1967,
+165,index,,1971,
+166,index,,1972,
+167,index,,1975,
+168,index,,1977,
+169,index,,1981,
+170,index,,,base spans 1982 to 1984; no single base year
+171,index,,1986,
+172,index,,1990,
 173,index,,1992,
+174,index,,,base month December 1997 (199712=100)
+175,index,,1997,
+176,index,,2000,
+177,index,,2001,
+178,index,,2002,
+179,index,,2003,
+180,index,,2006,
 181,index,,2007,
 182,index,,2008,
+183,index,,2009,
+184,index,,2010,
+185,index,,2011,
+186,index,,2013,
 187,index,,,base period 1982 to 1990
+188,index,,,city average is the comparison base; no base year
+189,index,,1992,
+190,count,,,
+191,energy,kcal,,
 192,mass,kg,,
+193,rate,,,
+194,rate,,,
+195,volume,,,
+196,length,km,,
+197,rate,,,
+198,mass,kt,,
+199,energy,kWh,,
+200,other,,,power unit; no power family
+201,count,,,
+202,count,,,
+203,volume,L,,
+204,volume,,,
+205,rate,,,
+206,other,,,lower confidence-interval bound; not additive
+207,rate,,,mean; not additive
+208,volume,,,
+209,mass,Mt,,
+210,energy,MWh,,
+211,count,,,
+212,count,,,
+213,count,,,
+214,mass,t,,
+215,other,,,unit name does not identify the measured quantity
+216,mass,,,
+217,mass,,,
+218,length,mm,,
+219,time,min,,mostly an average or median duration; not additive
+220,time,mo,,mostly an average or median duration; not additive
+221,other,,,calendar month/day notation; not a duration
+222,rate,,,
 223,count,,,
+224,other,,,equivalent quantity with no mass unit stated
+225,count,,,nights stayed; a count of nights
+226,count,,,scale is in the unit name; check SCALAR_ID to avoid double scaling
 227,count,,,farms reporting
+228,count,,,
+229,rate,,,
+230,count,,,
+231,count,,,
+232,mass,,,
+233,count,,,
+234,other,,,passenger-distance activity; not a plain distance
+235,other,,,passenger-distance activity; not a plain distance
+236,count,,,
+237,count,,,
+238,other,,,passenger-distance activity; not a plain distance
 239,percent,%,,
+240,percent,%,,percent change in a 1986-base index; not an index level
+241,percent,%,,percent change in a 1992-base index; not an index level
 242,percent,%,,
+243,percent,%,,
+244,percent,%,,
+245,percent,%,,
+246,percent,%,,
+247,count,,,
+248,count,,,
 249,count,,,persons
+250,energy,PJ,,
+251,other,,,point is not identified as an index or a physical unit
+252,count,,,
+253,count,,,
 254,mass,lb,,
+255,mass,,,
+256,rate,,,
 257,rate,,,denominator not stated in the unit name
+258,rate,,,
+259,rate,,,
+260,rate,,,
+261,rate,,,
+262,rate,,,
+263,rate,,,
+264,rate,,,
 265,rate,,,per 100000 population
-270,rate,,,ratio
+266,rate,,,
+267,rate,,,
+268,rate,,,
+269,rate,,,
+270,ratio,,,ratio
+271,ratio,,,
+272,ratio,,,
+273,count,,,
+274,other,,,equivalent quantity with no mass unit stated
+275,other,,,capacity-distance activity; not a plain count
+276,count,,,
+277,count,,,
+278,count,,,
+279,area,ft²,,
+280,area,km²,,
+281,area,m²,,
+282,count,,,
+283,energy,TJ,,
+284,currency,CAD,,thousands scale is in the unit name; check SCALAR_ID to avoid double scaling
+285,other,,,freight-distance activity; not a mass
+286,other,,,freight-distance activity; not a mass
+287,mass,t,,
 288,mass,t,,metric tonnes
+289,energy,toe,,"tonnes of oil equivalent measure energy, not mass"
+290,rate,,,
 291,mass,ton,,short or long ton not stated in the unit name
+292,mass,,,
+293,rate,,,
+294,mass,,,
+295,count,,,
+296,rate,,,
+297,currency,USD,,
+298,currency,USD,,
+299,rate,,,
 300,count,,,
 301,other,veh-km,,vehicle distance
-303,time,wk,,
+302,count,,,
+303,time,wk,,mostly an average or median duration; not additive
+304,other,,,statistical weights; not additive
+305,other,,,1986-normalized statistical weights; not additive
+306,other,,,1997-normalized statistical weights; not additive
+307,count,,,
+308,time,yr,,mostly an average or median duration; not additive
+309,currency,CAD,,year qualifier is 2002; constant-dollar meaning is not explicit
+310,rate,,,
+311,rate,,,
+312,rate,,,
+313,rate,,,
+314,currency,CAD,2013,
+315,rate,,,
+316,volume,,,
+317,rate,,,
+318,rate,,,
+319,count,,,container equivalents; unit name has trailing space
+320,rate,,,
+321,currency,CAD,2007,
+322,currency,CAD,2014,
+323,volume,,,
+324,index,,2015,
+325,mass,,,
+326,count,,,
+327,volume,hL,,
+328,mass,,,
+329,mass,,,
+330,volume,,,
+331,volume,,,
+332,area,m²,,
+333,volume,m³,,
+334,length,m,,
+335,energy,MWh,,
+336,count,,,
+337,volume,,,scale is in the unit name; check SCALAR_ID to avoid double scaling
+338,mass,t,,
+339,mass,t,,
+340,count,,,
+341,mass,,,
+342,mass,,,
+343,other,,,blank unit name; not additive
+344,count,,,
+345,currency,CAD,2015,
+346,index,,2014,
+347,index,,,base month 2016-12 (not a single-year index base)
 348,index,,2012,
+349,other,,,capacity-distance activity; not a plain count
 350,currency,CAD,2016,constant dollars
+351,index,,2014,
+352,rate,,,
+353,rate,,,
+354,rate,,,
+355,rate,,,
+356,rate,,,
+357,volume,,,thousand board feet; lumber volume
+358,percent,,,basis points (one basis point is 0.01 percentage points)
+359,rate,,,
+360,length,cm,,
+361,rate,,,
+362,rate,,,
+363,other,,,blood pressure; no pressure family; not additive
+364,rate,,,
+365,rate,,,
+366,rate,,,
+367,rate,,,
+368,rate,,,
+369,rate,,,
+370,currency,CAD,,constant-dollar base year not stated
 371,count,,,farms
 372,count,,,farm operators
 373,index,,2017,
+374,index,,2015,
+375,currency,CAD,1997,
+376,index,,,"indices of change, not an ordinary count"
+377,rate,,,
+378,rate,,,
+379,rate,,,average duration; not additive
+380,rate,,,
+381,currency,CAD,2012,
+382,rate,,2012,
+383,index,,2012,
+384,rate,,,
+385,rate,,,
+386,index,,2016,
+387,currency,CAD,2017,
+388,index,,,base month 2018-12 (not a single-year index base)
 389,currency,CAD,2011,constant dollars
+390,index,,2018,
+391,currency,CAD,2012,scale is in the unit name; check SCALAR_ID to avoid double scaling
+392,ratio,,,litres divided by litres; dimensionless ratio
+393,volume,fL,,
+394,rate,,,
 395,rate,,,per 100000 live births
+396,percent,,,"percentage points, not percentages of a whole"
+397,rate,,,
+398,index,,2018,
+399,mass,,,
+400,currency,CAD,2018,
+401,index,,2019,
+402,index,,2017,
 403,index,,,base month January 2020 (202001=100)
+404,currency,CAD,2019,
+405,count,,,
+406,rate,,,
+407,index,,2019,"index reference is 2019=0, not 100"
+408,energy,MJ,,
+409,volume,,,
+410,length,m,,
+411,rate,,,
+412,other,,,force unit; no force family
+413,rate,,,
+414,rate,,,
+415,rate,,,
+416,rate,,,
+417,area,mm²,,
+418,count,,,
+419,count,,,
+420,rate,,,
+421,rate,,,
+422,rate,,,average with no denominator stated; not additive
+423,rate,,,average count; not additive
+424,rate,,,
+425,currency,CAD,2020,
+426,index,,2019,
+427,index,,,base month 2022-04 (not a single-year index base)
 428,count,,,persons in thousands; the unit name carries the thousands and SCALAR_ID may add another scale
+429,currency,CAD,2021,
+430,index,,2020,
+431,rate,,,average percentage; not additive
+432,rate,,,
+433,length,ft,,
+434,index,,2021,
+435,index,,,base month 1989-01 (not a single-year index base)
+436,count,,,
+437,rate,,,
+438,index,,,base month 2023-04 (not a single-year index base)
+439,currency,CAD,2022,
+440,currency,CAD,2017,
+441,rate,,,
+442,rate,,,
+443,rate,,,
+444,rate,,,average duration; not additive
+445,currency,CAD,2017,scale is in the unit name; check SCALAR_ID to avoid double scaling
+446,rate,,2017,
+447,other,,,Boolean value; not additive
+448,rate,,,
+449,currency,CAD,2023,
+450,volume,,,millions scale is in the unit name; check SCALAR_ID to avoid double scaling
+451,index,,2023,
+452,index,,,base month 2024-04 (not a single-year index base)
+453,rate,,,
 454,index,,,base month July 2024 (202407=100)
 455,currency,CAD,2024,constant dollars
+456,other,,,arbitrary unit; not additive
+457,rate,,,
+458,rate,,,
+459,mass,t,,thousands scale is in the unit name; check SCALAR_ID to avoid double scaling
+460,currency,CAD,2025,
+461,rate,,,
+462,rate,,,
+463,index,,,base month 2018-01 (not a single-year index base)
+888,other,,,null unit sentinel; not additive

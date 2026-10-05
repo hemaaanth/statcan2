@@ -3,9 +3,13 @@
 
 import datetime as dt
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
+import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
 sys.path.insert(0, str(Path(__file__).parent))
 import wds_normalize as norm
 
@@ -54,6 +58,86 @@ class PeriodTest(unittest.TestCase):
     def test_shape(self):
         self.assertEqual(norm.ref_date_shape("2015/2016"), "9999/9999")
 
+
+
+class SeriesGroupingTest(unittest.TestCase):
+    def test_empty_vector_groups_by_coordinate(self):
+        rows = []
+        for coordinate, value in (("1.1", "10"), ("1.2", "20")):
+            row = {
+                "pid": "98100034", "vector": "", "coordinate": coordinate, "uom_id": None, "scalar_id": None,
+                "decimals": 0, "terminated": "", "dguid": "", "ref_date": "2021A0000", "value": value, "status": "",
+            }
+            row.update({member_id: i for i, member_id in enumerate(norm.MEMBER_IDS, 1)})
+            rows.append(row)
+        with tempfile.TemporaryDirectory() as td:
+            obs = Path(td) / "obs.parquet"
+            pq.write_table(pa.Table.from_pylist(rows), obs)
+            con = duckdb.connect()
+            con.register("periods", pa.Table.from_pylist(
+                [{"ref_date": "2021A0000", "period_start": D(2021, 1, 1),
+                  "period_end": D(2021, 12, 31), "period_kind": "year"}],
+                schema=norm.PERIOD_SCHEMA))
+            result = con.execute(norm.SERIES_PART_SQL.format(
+                member_ids=", ".join(f"min(o.{c}) AS {c}" for c in norm.MEMBER_IDS),
+                obs=obs.as_posix())).fetchall()
+        self.assertEqual(len(result), 2)
+        self.assertEqual(sorted(row[2] for row in result), ["1.1", "1.2"])
+
+    def test_census_direct_projection_preserves_order_and_cell_values(self):
+        pid = "98100001"
+        rows = []
+        for member_id, value, status in ((1, "42", ""), (3, "", "x")):
+            row = {"pid": pid, "vector": "", "coordinate": f"1.{member_id}",
+                   "uom_id": None, "scalar_id": None, "decimals": None,
+                   "terminated": "", "ref_date": "2021", "value": value, "status": status}
+            row.update({field: (1 if i == 1 else member_id if i == 2 else None)
+                        for i, field in enumerate(norm.MEMBER_IDS, 1)})
+            rows.append(row)
+        with tempfile.TemporaryDirectory() as td:
+            obs = Path(td) / "obs.parquet"
+            pq.write_table(pa.Table.from_pylist(rows), obs)
+            con = duckdb.connect()
+            con.execute("SET threads = 1")
+            con.register("member", pa.Table.from_pylist([
+                {"pid": pid, "dimension_id": 1, "member_id": 1, "member_name": "Canada"},
+                {"pid": pid, "dimension_id": 2, "member_id": 1, "member_name": "Population"},
+                {"pid": pid, "dimension_id": 2, "member_id": 3, "member_name": "Suppressed"},
+            ]))
+            con.register("member_place", pa.Table.from_pylist([
+                {"pid": pid, "dimension_id": 1, "member_id": 1, "place_id": "2021A000011124"}]))
+            con.register("unit_family", pa.Table.from_pylist([], schema=norm.UNIT_FAMILY_SCHEMA))
+            result = con.execute(norm.census_series_sql(pid, obs.as_posix(), norm.period("2021", None)))
+            names = [column[0] for column in result.description]
+            projected = [dict(zip(names, row)) for row in result.fetchall()]
+            con.close()
+        self.assertEqual([(r["coordinate"], r["label_1"], r["label_2"], r["place_id"],
+                           r["n_obs"], r["n_published"], r["last_status"]) for r in projected],
+                         [("1.1", "Canada", "Population", "2021A000011124", 1, 1, ""),
+                          ("1.3", "Canada", "Suppressed", "2021A000011124", 1, 0, "x")])
+        self.assertEqual([(r["period_kind"], r["period_min"], r["period_max"]) for r in projected],
+                         [("year", D(2021, 1, 1), D(2021, 12, 31))] * 2)
+
+    def test_census_reuse_refuses_nonnull_units_and_wrong_hash(self):
+        class Space:
+            def check(self, _bytes=0):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            source, dest = Path(td) / "source.parquet", Path(td) / "dest.parquet"
+            pq.write_table(pa.table({"uom_id": pa.array([None, None], type=pa.int32()),
+                                     "unit_family": pa.array([None, None], type=pa.string())}), source)
+            norm.require_null_parquet_columns(source, 2, ("uom_id", "unit_family"))
+            expected = {"bytes": source.stat().st_size, "sha256": norm.sha256_file(source)}
+            self.assertEqual(norm.copy_verified_part(source, dest, expected, Space()), expected)
+            self.assertEqual(norm.sha256_file(dest), expected["sha256"])
+            dest.unlink()
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                norm.copy_verified_part(source, dest, {**expected, "sha256": "0" * 64}, Space())
+            self.assertFalse(dest.exists())
+            pq.write_table(pa.table({"uom_id": pa.array([None, 17], type=pa.int32())}), source)
+            with self.assertRaisesRegex(ValueError, "not proven null"):
+                norm.require_null_parquet_columns(source, 2, ("uom_id",))
 
 class DguidTest(unittest.TestCase):
     def test_well_formed(self):

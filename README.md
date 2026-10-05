@@ -21,3 +21,7 @@ Built-in AI chat is not a priority. This is not an official Statistics Canada se
 ## Status
 
 A [reproducible size survey](tools/wds_size_survey.py) measured 220 English table ZIP sizes with `HEAD`. An English-only WDS full-table capture began on 2026-09-30 UTC on a separate USB SSD. The [resumable downloader](tools/wds_download.py) preserves original ZIPs and records checksums; this local capture is **not yet backed up**. French ZIPs are deferred. A [build tool](tools/wds_build.py) turns captured ZIPs into reproducible Parquet query files plus a manifest; it has run on a 10-table sample, see [BUILD.md](BUILD.md). A [Node API and site](api/README.md) serve any build directory: catalogue search over the whole inventory, metadata, filtered observations, Parquet and original-ZIP downloads, every response pinned to a build ID. See the [acquisition runbook](ACQUISITION.md), [source coverage ledger](SOURCE_COVERAGE.md), [roadmap](ROADMAP.md), and [live data survey](DATA_SURVEY.md).
+
+## Licence
+
+The code is under the [MIT licence](LICENSE). The data comes from Statistics Canada under the [Statistics Canada Open Licence](https://www.statcan.gc.ca/en/terms-conditions/open-licence). Client logos on the MCP page come from [lobe-icons](https://github.com/lobehub/lobe-icons) (MIT). Highcharts has its own licence; see [api/README.md](api/README.md).

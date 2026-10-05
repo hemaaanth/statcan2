@@ -88,31 +88,35 @@ Not covered: Census-layout tables (none captured yet), tables with a `Release` d
 
 ## Normalized layer
 
-[`tools/wds_normalize.py`](tools/wds_normalize.py) reads one Clean build and the captured WDS code sets and writes the Normalized files described in [SCHEMA.md](SCHEMA.md). It never changes a Clean file. Output goes to `<clean-build-dir>/normalized/<build-id>/`; an existing build ID is refused. The inputs and the output must sit on the UUID-checked SSD. The tool checks the code set file against its sibling `.sha256` file and stops on a mismatch.
+[`tools/wds_normalize.py`](tools/wds_normalize.py) reads one or more Clean builds and the captured WDS code sets and writes the Normalized files described in [SCHEMA.md](SCHEMA.md). It never changes a Clean file. Output goes to `<first-clean-build-dir>/normalized/<build-id>/`; an existing build ID is refused. The inputs and the output must sit on the UUID-checked SSD. The tool checks the code set file against its sibling `.sha256` file and stops on a mismatch.
 
 ```bash
 .venv/bin/python -B tools/wds_normalize.py \
-  --clean /run/media/hemanth/Kingston/statcan-derived/v0 \
+  --clean /run/media/hemanth/Kingston/statcan-derived/wds-full-1 \
+          /run/media/hemanth/Kingston/statcan-derived/census-full-1 \
   --codesets /run/media/hemanth/Kingston/statcan-ref/codesets/20260930T182041Z/codeSets.json \
-  --mount-uuid 72D0-2131 --build-id n3 --memory-gib 4 --threads 2
+  --mount-uuid 72D0-2131 --build-id <normalized-build-id> --memory-gib 4 --threads 2
 .venv/bin/python -B -m unittest tools.test_wds_normalize
 ```
 
-DuckDB works in `<build-id>/tmp/` (a work database and spill files); the folder is deleted at the end. Observation files are read one at a time, never all at once. Output files are sorted and written by one DuckDB thread, because parallel Parquet writers cut row groups at different rows from run to run. With that, the same Clean build, code sets, `data/ref/*.csv`, and tool versions give byte-identical Parquet files.
+DuckDB works in `<build-id>/tmp/` (a work database and spill files); the folder is deleted at the end. Observation files are read one at a time, never all at once. Small output files are sorted and written by one DuckDB thread, because parallel Parquet writers cut row groups at different rows from run to run. `series/` is written as one DuckDB-compressed Parquet part per PID; this avoids a monolithic staging table or duplicate final `series.parquet` during Census builds. Census Clean verifies that each cell has one observation and arrives in member-ID order. Its direct series projection uses constant member-label and place lists rather than per-cell joins or a second sort. A single writer retains that order. The same Clean build, code sets, `data/ref/*.csv`, and tool versions give byte-identical Parquet files.
+
+For a unit-map-only rebuild, `--reuse-census-from <normalized-dir>` copies Census series parts from a previous combined build. exFAT has no hardlinks or reflinks. Reuse checks both Clean manifest hashes and every Census Clean observation SHA-256, the code-set and place-alias hashes, tool versions, and null Census unit columns. It also requires byte-identical `period`, `place`, and `member_place` files. Every source and copied part is checked against the source manifest SHA-256. The new manifest records the source manifest hash, reused part count, rows, bytes, and per-part hashes. Reference CSV hashes are captured before they are read and checked again before finalizing the build; a reference edit during a run now fails rather than recording the later version.
 
 ### Output contract
 
 | File | One row per | Columns and rules |
 |---|---|---|
-| `frequency`, `subject`, `survey`, `uom`, `scalar`, `status`, `symbol`, `classification_type`, `terminated` | code in `codeSets.json` | `code` (integer where StatCan gives integers, string where it gives strings: `subject`, `survey`, `status`, `symbol`), `en`, `fr`, `representation` (English display text such as `..` or `p`; null for sets without one). `securityLevel` and `wdsResponseStatus` are not written. |
-| `unit_family` | `uom_id` seen in any Clean `obs` file | `uom_code`, `family`, `symbol`, `base_year`, `note`, taken from the hand-kept [`data/ref/unit_family.csv`](data/ref/unit_family.csv). A code missing from the CSV gets `family = other` and a manifest warning. `base_year` is set for `YYYY constant dollars` and for single-year index bases (`Index, 2007=100`). |
+| `frequency`, `subject`, `survey`, `uom`, `scalar`, `status`, `symbol`, `classification_type`, `security_level`, `terminated` | code in `codeSets.json` | `code` (integer where StatCan gives integers, string where it gives strings: `subject`, `survey`, `status`, `symbol`), `en`, `fr`, `representation` (English display text such as `..`, `p`, or `x`; null for sets without one). `security_level` comes from official `securityLevel`. `wdsResponseStatus` is not written. |
+| `unit_family` | `uom_id` seen in any Clean `obs` file | `uom_code`, `family`, `symbol`, `base_year`, `note`, taken from the hand-kept [`data/ref/unit_family.csv`](data/ref/unit_family.csv). A code missing from the CSV gets `family = other` and a manifest warning. Census rows with null units do not create a unit row. |
+| `period` | `(pid, ref_date)` seen in any Clean `obs` file | `pid`, `ref_date`, `period_start`, `period_end`, `period_kind` from the rules below. |
 | `place` | place seen in the data | `place_id`, `dguid`, `vintage`, `geo_type`, `schema`, `geo_code`, `name_en`, `level`, `parent_place_id` (see below) |
 | `member_place` | member of dimension 1 (the `GEO` dimension) of every built table | `pid`, `dimension_id` (always 1), `member_id`, `place_id`, `match` (`dguid`, `code`, `name`, `none`), `note` (why earlier rules did not apply) |
-| `series` | `(pid, vector)` | `coordinate`, `member_id_1..9`, `label_1..9` (member names), `place_id` (via `member_place` for `member_id_1`), `uom_code`, `unit_family`, `scalar_code`, `decimals`, `period_kind`, `period_min` (earliest `period_start`), `period_max` (latest `period_end`), `n_obs`, `n_published` (non-blank `value`), `terminated` (boolean: any row has `t`), `last_status` (`status` at the latest `ref_date`). Sorted by `pid, member_id_1..9`. |
-| `table` | PID in the Clean `cube` table (all inventory PIDs, built or not) | all `cube` columns, then `kind` (`time_series` when `cube_start_date` differs from `cube_end_date`, else `snapshot`), `family` (`census_2021` for PIDs starting `98`, else `wds`), `frequency_en`, `subject_en[]`, `survey_en[]` (code-set labels in inventory order), `queryable` (Clean has an `obs` file), `clean_build_id`, `row_count`, `series_count`, `period_min`, `period_max`, `unit_families[]`, `place_levels[]`, `n_places_mapped`, `n_places_unmapped` (all from `series` and `member_place`; null when not built), `search_text` (title, dimension names, member names, and notes with HTML tags removed, joined by ` \| `) |
-| `normalize_manifest.json` | build | build ID, Clean build ID and `build_manifest.json` SHA-256, code set path and SHA-256, SHA-256 of both `data/ref` CSVs, tool versions, per-file rows/bytes/SHA-256, `stats` (place `match` counts, `period_kind` counts by series and by observation, places whose parent differs between tables), `warnings` |
+| `series/*.parquet` | `(pid, vector)` when `vector` is non-empty; otherwise `(pid, coordinate)` | One part per built PID. Columns: `pid`, `vector`, `coordinate`, `member_id_1..9`, `label_1..9` (member names), `place_id` (via `member_place` for `member_id_1`), `uom_code`, `unit_family`, `scalar_code`, `decimals`, `period_kind`, `period_min` (earliest `period_start`), `period_max` (latest `period_end`), `n_obs`, `n_published` (non-blank `value`), `terminated` (boolean: any row has `t`), `last_status` (`status` at the latest `ref_date`). Sorted by `pid, member_id_1..9`. |
+| `table` | PID in the Clean `cube` table (all inventory PIDs, built or not) | all `cube` columns, then `kind` (`time_series` when `cube_start_date` differs from `cube_end_date`, else `snapshot`), `family` (`census_2021` for PIDs starting `98`, else `wds`), `frequency_en`, `subject_en[]`, `survey_en[]` (code-set labels in inventory order), `queryable` (Clean has an `obs` file), `clean_build_id`, `row_count`, `series_count`, `period_min`, `period_max`, `unit_families[]`, `place_levels[]`, `n_places_mapped`, `n_places_unmapped` (all from `series_stats` and `member_place`; null when not built), `search_title`, `search_dimensions`, `search_members`, `search_notes`, and compatibility `search_text` (the four search fields joined by ` | `) |
+| `normalize_manifest.json` | build | build ID, `clean` (single-input compatibility record), `cleans[]` (each Clean build ID/path/manifest hash), code set path and SHA-256, SHA-256 of both `data/ref` CSVs, tool versions, per-file rows/bytes/SHA-256, `files["series/"]` with the part-directory summary, `stats` (place `match` counts, `period_kind` counts by series and by observation, places whose parent differs between tables), `warnings` |
 
-Warnings the build records instead of failing: exact duplicate rows in the Clean catalogue (dropped), unit codes missing from `unit_family.csv` or from the `uom` code set, frequency/subject/survey codes missing from the code sets, `ref_date` text with an unknown shape (listed by PID and shape), series whose unit, scale, decimals, terminated flag, DGUID, coordinate, or period kind changes between rows, geography members without a place, and a PID whose observation count differs from the Clean manifest. A member key with two different rows in the Clean member table stops the build, because it would duplicate series rows.
+Warnings the build records instead of failing: exact duplicate rows in the Clean catalogue (dropped), unit codes missing from `unit_family.csv` or from the `uom` code set, frequency/subject/survey codes missing from the code sets, `ref_date` text with an unknown shape (listed by PID and shape), series whose unit, scale, decimals, terminated flag, DGUID, coordinate, or period kind changes between rows, geography members without a place, and a PID whose observation count differs from the Clean manifest. The build fails if a member key has two different rows or if any `series.n_obs` does not equal the observations grouped into that series key.
 
 ### Period rules
 
@@ -157,24 +161,92 @@ Code length is not used to infer a schema, although SCHEMA.md suggests it. In `v
 - Unit scale: `value × 10^scalar` is not stored (SCHEMA.md). Unit names are never rewritten; `unit_family` only groups codes.
 - French labels beyond the code sets.
 
-### Results on `v0` (builds `n3`, `n4`)
+### Results on `v0` (build `n4`)
 
-Both runs took about 187 s (4 GB, 2 threads, while the 4-worker full Clean build ran on the same SSD) and matched on all 14 Parquet hashes.
+`n4` took 61.1 s (4 GB, 2 threads) and wrote 105 `series/*.parquet` parts plus 15 other Parquet files.
 
 | File | Rows | Bytes |
 |---|---:|---:|
-| `series` | 5,904,721 | 11,642,279 |
-| `table` | 8,271 | 732,116 |
+| `series/` | 5,904,721 | 12,035,944 |
+| `table` | 8,271 | 1,090,120 |
+| `period` | 36,564 | 164,993 |
 | `place` | 2,451 | 51,974 |
 | `member_place` | 8,280 | 20,388 |
 | `unit_family` | 42 | 1,525 |
-| code sets (9 files) | 17 / 622 / 903 / 465 / 10 / 11 / 3 / 91 / 2 | 67,814 total |
+| code sets (10 files) | 17 / 622 / 903 / 465 / 10 / 11 / 3 / 91 / 2 / 2 | 68,781 total |
 
 - Place `match`: `dguid` 7,167, `code` 78, `name` 119, `none` 916. 1,747 of 2,451 places are schema `0502`. 66 places have parents that differ between tables.
 - `period_kind` by series (observations): `year` 5,693,201 (80.0 M), `month` 56,719 (30.8 M), `multi_year` 127,120 (254 k), `half_year` 14,353, `quarter` 6,757 (295 k), `fiscal_year` 6,512 (306 k), `day` 54 (681 k), `week` 5 (10 k). No unknown `ref_date` shape.
 - Unit codes: 42 in `obs`, all in `unit_family.csv`. `family = other` only for 301 `Vehicle-kilometres`.
 - Warnings: the Clean `v0` catalogue holds 10100139's metadata twice (40 member, 2 dimension, 1 note duplicate rows, dropped), and 916 geography members have no place. No series changes unit, scale, decimals, terminated flag, DGUID, or coordinate between rows. Series sums equal the Clean row counts.
 - Spot checks: `Ontario` is a member in 47 tables; all map to schema `0002`, `geo_code` `35` (`2011A000235`, `2016A000235`, `2021A000235` by DGUID; `code:0002:35` by name in 8 tables). 10100004 (quarterly, `YYYY-MM`) has 354 series, all `quarter`, 1978-04-01 to 2026-06-30. 18100006 (CPI) has 11 series, all `uom_code` 17 (`2002=100`), `unit_family = index`, `month`.
+
+### Full combined Normalized build (`n7`)
+
+`statcan-n7.service` completed successfully on 2026-10-04 in 37,859.1 s (10 h 31 min) at `--memory-gib 6 --threads 4`. The first pass over both Clean builds took 3,848.0 s; the per-PID series writes took 33,737.6 s, including 24,275.9 s (6 h 45 min) for Census and 9,428.0 s (2 h 37 min) for WDS. `table` took 13.9 s; cleanup and manifest took 233.4 s. The unit's memory ceiling was raised from 12 to 16 GiB after `statcan-n6` finished; the DuckDB 6 GiB limit did not change.
+
+| File | Rows | Bytes |
+|---|---:|---:|
+| `series/` | 50,554,526,028 | 39,379,166,481 |
+| Census series (525 parts) | 49,923,588,701 | 37,839,344,269 (35.24 GiB) |
+| WDS series (7,736 parts) | 630,937,327 | 1,539,822,212 (1.43 GiB) |
+| `table` | 8,271 (8,261 queryable) | 9,479,581 |
+| `period` | 583,137 | 1,303,452 |
+| `place` | 106,593 | 926,226 |
+| `member_place` | 1,707,502 | 4,062,537 |
+
+`normalize_manifest.json` lists both input Clean builds, all 8,261 per-PID parts, and six warnings: duplicated inventory rows across the two inputs (dropped), varying scalar in 24100029, varying DGUID/period kind in 33100167, 362 unit codes absent from `unit_family.csv`, and 88,259 geography members without a mapped place. No Census table has a warning. File existence and the part-directory summary hash match the manifest; sampled Parquet hashes match. `table` contains 7,736 WDS and 525 Census queryable PIDs. Its family row-count sums match both Clean manifests. Census 98100001 and 98100404 have `n_obs = 1` in every series row and 154 and 551,712,000 rows respectively; WDS 18100006 and 12100152 series sums match their Clean observation counts. The SSD had 207 GiB free after the run, above the 150 GiB reserve.
+
+API inputs: `STATCAN_BUILD=/run/media/hemanth/Kingston/statcan-derived/wds-full-1`, `STATCAN_NORMALIZED=/run/media/hemanth/Kingston/statcan-derived/wds-full-1/normalized/n8`, and `STATCAN_CODESETS=/run/media/hemanth/Kingston/statcan-ref/codesets/20260930T182041Z/codeSets.json`. The API validates both entries in `normalized.cleans[]`, loads each Clean catalogue, and routes each PID to its own Clean observation Parquet. Set `STATCAN_CAPTURE=/run/media/hemanth/Kingston/statcan-wds/baseline` to serve captured original source ZIPs for both families. See [api/README.md](api/README.md).
+Direct DuckDB search over the `n7` table's 8,271 rows took 14–25 ms for the observed `population` and `inflation` queries in the original build check. A separate 20-query direct table-scan check had p50 10.2 ms and p95 22.4 ms; HTTP search is measured separately.
+
+### Full combined Normalized build (`n8`)
+
+`statcan-n8.service` completed on 2026-10-04 in 16,109.0 s (4 h 28 min 29 s), at `--memory-gib 6 --threads 4` and a 12 GiB systemd memory ceiling. Its log is `/run/media/hemanth/Kingston/statcan-derived/n8.log`. The first stage, including the Census reuse checks, took 2,785.3 s; series output took 10,681.0 s. `--reuse-census-from /run/media/hemanth/Kingston/statcan-derived/wds-full-1/normalized/n7` verified the two Clean inputs, all 525 Clean Census observation hashes, all 525 source series hashes, null Census units, and the unchanged shared files. It then copied and rechecked all 525 Census parts (37,839,344,269 bytes). The n8 manifest records the n7 manifest hash and those reuse checks. No n6 or n7 files were removed. On 2026-10-04 the retired builds were deleted to free space: Normalized n3, n4, n6 and n7, and the sample Clean builds v0, big1, census-big1 and census-s2a. n8 is the only Normalized build kept; the full Clean builds and raw captures remain. The `wds-full-1/parts/` folder (14 GB of per-PID catalogue parts, already merged into `catalogue/` and not listed in the manifest) was also deleted; only `wds_build.py --resume` reads it.
+
+Launch command (use a new build ID to repeat it):
+
+```bash
+systemd-run --user --unit=statcan-n8 \
+  --working-directory=/home/hemanth/Projects/statcan --property=MemoryMax=12G \
+  bash -c 'exec .venv/bin/python -u -B tools/wds_normalize.py \
+    --clean /run/media/hemanth/Kingston/statcan-derived/wds-full-1 \
+            /run/media/hemanth/Kingston/statcan-derived/census-full-1 \
+    --codesets /run/media/hemanth/Kingston/statcan-ref/codesets/20260930T182041Z/codeSets.json \
+    --mount-uuid 72D0-2131 --build-id n8 --memory-gib 6 --threads 4 \
+    --reuse-census-from /run/media/hemanth/Kingston/statcan-derived/wds-full-1/normalized/n7 \
+    > /run/media/hemanth/Kingston/statcan-derived/n8.log 2>&1'
+```
+
+| Output | Rows | Bytes |
+|---|---:|---:|
+| `series/` (8,261 parts) | 50,554,526,028 | 39,379,160,759 |
+| WDS series (7,736 parts) | 630,937,327 | 1,539,816,490 |
+| Census series (525 parts) | 49,923,588,701 | 37,839,344,269 |
+| `table` (8,261 queryable PIDs) | 8,271 | 9,479,661 |
+| `unit_family` (observed UOM codes) | 404 | 4,089 |
+
+| Unit family | Series rows |
+|---|---:|
+| area | 24,241,752 |
+| count | 236,393,436 |
+| currency | 163,004,355 |
+| energy | 30,440 |
+| index | 200,783 |
+| length | 38,710 |
+| mass | 83,151 |
+| other | 341,893 |
+| percent | 193,897,379 |
+| rate | 5,167,562 |
+| ratio | 1,066,865 |
+| time | 6,424,772 |
+| volume | 46,229 |
+| Census (null) | 49,923,588,701 |
+| **Total** | **50,554,526,028** |
+
+The updated CSV covers all 465 official UOM codes; `tools/check_unit_family.py` reports zero missing. All 630,937,327 WDS series rows have the CSV family for their code. Compared with n7, only `unit_family.parquet`, `table.unit_families`, and `series.unit_family` changed: 1,205 WDS part hashes changed, with all 146,582,436 non-family rows in those parts identical; the other parts have identical hashes. The 1,205 changed table family lists have the same PIDs; every other table column and every other small file is identical. All 525 Census part hashes match n7, and their unit columns remain null. The five remaining warnings concern duplicate inventory rows, varying scalar or DGUID/period kind in two WDS tables, and 88,259 unmapped geography members. There is no missing-unit-family warning. The SSD had 171 GiB free after the build, above the 150 GiB reserve.
+
+The n7 manifest's `unit_family.csv` hash happens to equal n8's: the CSV was edited during n7, after n7 had read it, and n7 recorded reference hashes only at the end. Its 362-missing-code warning and Parquet values show that it used the old map. n8 records reference hashes before reading and checks them again before finalizing.
 
 ## Census layout
 
@@ -264,16 +336,19 @@ Measured with `--jobs 1 --memory-gib 2` while the 4-worker full WDS build ran (l
 
 ### Projection for all 525
 
-Row counts per file were estimated from bytes per row in the first 4 MB of each CSV (estimate / actual on the 194 fully read files: median 1.00, range 0.97–1.76; 98100404: 0.97). Totals: 99.9 GB of ZIP, 1.73 TB of CSV, about 52.6 G output rows; the largest file is about 1.0 G rows (98100620). At the measured 15–19 MB of CSV per second per worker:
+Row counts per file were originally estimated from bytes per row in the first 4 MB of each CSV (estimate / actual on the 194 fully read files: median 1.00, range 0.97–1.76; 98100404: 0.97). The completed `census-full-1` Clean build has 49,923,588,701 rows. At the measured 15–19 MB of CSV per second per worker:
 
 - one worker: 25–32 h;
 - `--jobs 4`: about 6–8 h, if each worker keeps its rate (measured while another 4-worker build ran); the longest single table (98100404, 37.7 GB CSV) takes about 43 min, and largest-first ordering keeps it off the tail;
 - Parquet: 1.1–1.3 bytes per row, so about 60–70 GB; the tmp folder stays small because nothing is sorted;
 - memory: about 2.4 GB per worker.
 
+Normalized profiling on the 6-table `census-s2a` sample (56,841,442 cells, including 56,839,860 in 98100456) found an avoidable second sort of already ordered Census cells. Under concurrent `statcan-n6` load, the sorted `c-prof-1` run took 992.5 s and spilled over 8 GiB; the earlier `n4-estimate` took 548.5 s without the same load. The optimized `c-fast-4` took 37.0 s, and the repeat `c-fast-5` took 31.7 s: 26.8–31.3× faster than `c-prof-1`. `c-fast-4` spent 2.0 s on catalogue/code sets, 0.7 s on the period/series scan, 0.3 s on place/member_place, 33.1 s on series writes, 0.4 s on table, and 0.4 s on cleanup/manifest. Re-reading and hashing its 43.9 MB series output took 0.03 s from cache, so further scan/hash tuning would not address the bottleneck. No worker processes or Parquet setting changes were needed.
+
+The optimized output has 56,841,442 series rows, 43,851,527 bytes (0.77 bytes/series), and zero warnings. All 22 Parquet hashes match between `c-fast-4` and `c-fast-5`. All 121 WDS `v0` manifest file entries (105 series parts, 15 other files, and the series directory summary) matched `n4` on SHA-256 in `n4-check-2`. The previous sorted Census output differs in one large part's Parquet row-group boundaries (13,672 more bytes in the optimized `series/`), but all 56,839,860 rows of that part match in physical order and every column; the five smaller series files match by SHA-256. Its logical contract is unchanged. Scaling the 37.0 s sample to 49,923,588,701 cells projected about 9.0 h and 35.9 GiB for Census Normalized series. The full `n7` run measured 6.74 h of Census PID writes and 35.24 GiB, faster and slightly smaller than projected. At launch, 248 GiB was free against a 150 GiB reserve; at completion, 207 GiB remained.
+
 ### Known limits
 
-- 329 of 525 files were checked only by header and metadata. Their rows may break a rule that the 196 read files did not (out-of-order rows, a new label quirk, a code outside the legend); such a table fails with an error and no Parquet.
 - No sort fallback: a file with rows out of coordinate order fails. Adding `ORDER BY` for that table (and the multi-threaded sort cost) is the fix if it ever happens.
 - Units, scale, and decimals are empty (see Units).
 - `vector` is empty, so any Normalized step keyed on `(pid, vector)` must use `(pid, coordinate)` for Census tables.

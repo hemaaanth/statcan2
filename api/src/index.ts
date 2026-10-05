@@ -1,8 +1,12 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { apiRoutes } from "./api.ts";
+import { chartRoutes } from "./chart_api.ts";
 import { openFromEnv } from "./config.ts";
 import { pageRoutes } from "./pages.ts";
+import { ogRoutes } from "./og.ts";
+import { mcpRoutes } from "./mcp_http.ts";
+import { planRoutes } from "./plan.ts";
 
 const { db, captureDir } = await openFromEnv();
 const app = new Hono();
@@ -13,6 +17,10 @@ app.use("*", async (c, next) => {
   c.res.headers.set("X-Statcan-Normalized-Build", db.normalized.build_id);
 });
 app.route("/api/v1", apiRoutes({ db, captureDir }));
+app.route("/api/v1", chartRoutes({ db }));
+app.route("/api", mcpRoutes(db));
+app.route("/api/v1", planRoutes({ db }));
+app.route("/og", ogRoutes({ db }));
 app.route("/", pageRoutes({ db, captureDir }));
 app.onError((err, c) => {
   console.error(err);

@@ -1,0 +1,387 @@
+/* App screen (/). Base tokens come from pages.ts CSS; the top bar from topbar.css (imported below); DESIGN.md is the spec. */
+@import url("/static/topbar.css");
+:root{
+  /* Categorical palette, 10 slots (ViewSeries.color). Checked for protan/deutan/tritan separation; slot 0 is the site red. */
+  --c0:#D80621;--c1:#0E0F11;--c2:#2A5DB0;--c3:#C27400;--c4:#2E9C5A;--c5:#CC79A7;--c6:#3A8DC4;--c7:#813131;--c8:#7341D6;--c9:#A50D72;
+  --grid:#edeef0;--band:#f4f5f6;--builder:380px;
+}
+.c0{--c:var(--c0)}.c1{--c:var(--c1)}.c2{--c:var(--c2)}.c3{--c:var(--c3)}.c4{--c:var(--c4)}.c5{--c:var(--c5)}.c6{--c:var(--c6)}.c7{--c:var(--c7)}.c8{--c:var(--c8)}.c9{--c:var(--c9)}
+.sw{display:inline-block;width:10px;height:10px;background:var(--c);flex:none;vertical-align:baseline;margin-right:6px}
+
+.app-top{position:sticky;top:0;z-index:20}
+.progress{position:absolute;left:0;right:0;bottom:-1px;height:2px;overflow:hidden;pointer-events:none}
+.loading .progress::after{content:"";position:absolute;inset:0 auto 0 0;width:30%;background:var(--ink);animation:slide 1s linear infinite}
+@keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+@media (prefers-reduced-motion:reduce){.loading .progress::after{animation:none;width:100%;opacity:.4}}
+
+main.app{display:flex;align-items:flex-start;min-height:calc(100vh - 56px);max-width:none;margin:0}
+.app-main{flex:1;min-width:0}
+.view-head{display:flex;align-items:flex-end;gap:24px;padding:20px 24px 12px 48px;min-height:96px}
+#head{flex:1;min-width:0}
+#head .kicker{color:var(--muted);font:12px/16px var(--mono);text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+#head .kicker a{color:var(--ink)}
+#head h1{margin:4px 0 2px;font:600 32px/38px var(--sans);letter-spacing:-.015em}
+#head .sub{color:var(--muted);font-size:15px;line-height:20px}
+.warnings{list-style:none;margin:6px 0 0;padding:0;font:12px/16px var(--mono);color:var(--muted)}
+.warnings li::before{content:"! ";color:var(--hot)}
+/* How a group's value was made, when the chart cannot say it: "Prairies: recomputed as Unemployment ÷ Labour force × 100". */
+.method-line{margin-top:2px;font:12px/16px var(--mono);color:var(--muted)}
+.alts{display:flex;gap:16px;margin-top:6px;font:12px/16px var(--mono);white-space:nowrap;overflow:hidden}
+.alts span{color:var(--quiet);text-transform:uppercase}
+.alts a{overflow:hidden;text-overflow:ellipsis;max-width:36ch;color:var(--muted);text-decoration:underline;text-decoration-color:var(--line-strong)}
+/* Blank states have no head band: the page shows no rule except the top bar's bottom border. */
+[data-status=idle] .view-head,[data-status=need_more] .view-head,[data-status=no_match] .view-head{display:none}
+
+.btn{height:32px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line-strong);background:#fff;font:500 13px/16px var(--sans);color:var(--ink);white-space:nowrap}
+.btn:hover{text-decoration:underline}
+.btn.primary{background:var(--ink);border-color:var(--ink);color:#fff}
+.btn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+.btn[aria-expanded=true]{background:var(--ink);border-color:var(--ink);color:#fff}
+:focus-visible{outline:2px solid var(--hot);outline-offset:2px}
+
+/* The app screen is one window: head band, plot, rail. Chart details open as popovers over the plot, never below it. */
+.screen{height:calc(100svh - 56px);min-height:420px;display:flex;flex-direction:column}
+.js body.app-body{height:100svh;overflow:hidden}
+.js main.app{min-height:0;height:calc(100svh - 56px)}
+.stage{position:relative;flex:1;min-height:0;padding:0 24px 0 48px}
+.chart-box{height:100%}
+.blank{position:absolute;inset:0 24px 0 48px;display:flex;align-items:center;justify-content:center;background:#fff;border-top:1px solid var(--line)}
+.blank[hidden]{display:none}
+.blank-msg{margin:0;font:500 28px/34px var(--sans);color:var(--quiet)}
+.blank-msg.small{font-size:17px;line-height:22px;max-width:560px;text-align:center}
+.blank-idle{display:flex;flex-direction:column;align-items:center;gap:20px;width:min(880px,100%);text-align:center}
+.blank-idle p{margin:0;font:500 28px/34px var(--sans);color:var(--quiet)}
+.blank-idle p.blank-reason{max-width:560px;margin-top:-12px;font:400 15px/22px var(--sans);color:var(--muted)}
+/*
+ * Blank states (idle, need_more, no_match, error): one viewport, no scroll. No head band, no panels, no tab row; the rail
+ * keeps only the independence line. Nothing draws a rule except the top bar. The blank area has an even side inset,
+ * so the card or message centres on the window, not on the plot's 48/24 padding.
+ */
+:is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) :is(.panels,.rail a,.rail-acts){display:none}
+:is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) .screen{min-height:0}
+/* Without JS the blank states still must not scroll (the panels below are hidden there). */
+body:is([data-status=idle],[data-status=need_more],[data-status=no_match]){height:100svh;overflow:hidden}
+body:is([data-status=idle],[data-status=need_more],[data-status=no_match]) main.app{min-height:0;height:calc(100svh - 56px)}
+:is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) .blank{border-top:0;left:24px;right:24px;overflow:hidden}
+:is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) .rail{border:0}
+.examples{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;font:14px/20px var(--mono)}
+.examples a{display:inline-block;padding:6px 0;border-bottom:1px solid transparent}
+.examples a::before{content:"› ";color:var(--hot)}
+.examples a:hover{text-decoration:none;border-bottom-color:var(--ink)}
+
+/*
+ * Home (idle): a grid of key-indicator cards fills the window under the top bar. Desktop: 4 columns, the 2×2 centre
+ * card in columns 2–3 of rows 1–2, `grid-auto-flow: dense` so the cards fill every cell around it (12 cards + the
+ * centre = 4 × 4). Rows share the height, so 1440×900 never scrolls. Each cell draws its own 1 px rule; the page
+ * behind is white, so a missing card is white space, never a grey block. render.js marks trailing cards that would
+ * leave a part-filled last row in each layout (`spill-d` desktop, `spill-m` mid, `spill-p` phones); they are hidden,
+ * so the grid always ends on a full row.
+ */
+/* The grid sits 16 px under the top bar and over the rail, with the page's own side insets (48 left, 24 right). */
+body[data-status=idle] .blank{inset:16px 24px 0 48px;align-items:stretch}
+.home{width:100%;height:100%;display:flex}
+.hl-grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:minmax(0,1fr);grid-auto-flow:row dense;gap:1px;padding:1px;background:#fff}
+.hl-grid>*{min-width:0;min-height:0;background:#fff;box-shadow:0 0 0 1px var(--line)}
+@media (min-width:1200px){.hl-grid>.spill-d{display:none}}
+@media (min-width:901px) and (max-width:1199px){.hl-grid>.spill-m{display:none}}
+@media (max-width:900px){.hl-grid>.spill-p{display:none}}
+/* The centre card: columns 2–3, rows 1–2. Indicator cards fill the cells around it (dense). */
+.hl-centre{grid-column:2/4;grid-row:1/3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px 32px;text-align:center;cursor:text}
+.hl-centre:hover .hl-cta{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:4px}
+.hl-pointer{width:20px;height:34px;fill:none;stroke:var(--muted);stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round}
+.hl-cta{margin:0;max-width:440px;font:600 28px/34px var(--sans);letter-spacing:-.015em;color:var(--ink);text-wrap:balance}
+.hl-sub{margin:0;max-width:380px;font:15px/22px var(--sans);color:var(--muted);text-wrap:balance}
+/* Before the cards arrive: only the centre card, no frame and no placeholders. */
+.home.is-empty .hl-grid{grid-template-columns:1fr}
+.home.is-empty .hl-grid>*{box-shadow:none}
+.home.is-empty .hl-centre{grid-column:1;grid-row:1}
+/* Mid widths: the centre card is a band across the top, then the cards three to a row. */
+@media (min-width:901px) and (max-width:1199px){
+  .hl-grid{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:minmax(110px,.6fr);grid-auto-rows:minmax(0,1fr)}
+  .hl-centre{grid-column:1/-1;grid-row:1;padding:16px 32px;gap:8px}
+  .hl-pointer{height:24px}
+}
+/* Under 1200 px a card is ~150–190 px wide: the change kind and the table number take their own lines, never cut. */
+@media (max-width:1199px){
+  .hl-change{white-space:normal}
+  .hl-kind{display:block}
+  .hl-src{display:block}
+  .hl-src .dot{display:none}
+}
+/* Indicator card: label, big number, change, period · table, sparkline along the bottom. The whole card is a link. */
+.hl-card{position:relative;display:grid;grid-template-rows:auto auto auto auto 1fr;padding:16px 20px 14px;color:var(--ink);overflow:hidden}
+.hl-card:hover{text-decoration:none;background:#fafafa}
+.hl-card:hover .hl-label{text-decoration:underline}
+.hl-label{font:500 13px/18px var(--sans);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hl-value{display:flex;align-items:baseline;gap:6px;margin-top:4px;white-space:nowrap;overflow:hidden}
+.hl-value b{font:600 34px/40px var(--sans);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.hl-unit{font:12px/16px var(--mono);color:var(--quiet)}
+.hl-change{margin-top:2px;font:500 13px/18px var(--sans);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hl-change.is-up{color:var(--ok)}.hl-change.is-down{color:var(--bad)}.hl-change.is-flat{color:var(--muted)}
+.hl-arrow{display:inline-block;width:14px;font-size:10px}
+.hl-kind{color:var(--muted);font-weight:400}
+.hl-period{margin-top:2px;font:11px/16px var(--mono);color:var(--quiet);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hl-spark{align-self:end;width:100%;height:min(48px,100%);min-height:20px;margin-top:8px;overflow:visible}
+.hl-spark path{fill:none;stroke:var(--c);stroke-width:1.75;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round}
+
+/* Rail: one row of small buttons under the plot. Each opens its popover; the open one is ink-filled. */
+.rail{flex:none;position:relative;height:48px;display:flex;align-items:center;gap:6px;padding:0 24px 0 48px;border-top:0;background:#fff}
+.rail a{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--line-strong);font:500 13px/16px var(--sans);color:var(--ink);background:#fff}
+.rail a:hover{text-decoration:none;border-color:var(--ink)}
+.rail a[aria-expanded=true]{background:var(--ink);border-color:var(--ink);color:#fff}
+.rail a[aria-expanded=true] .count{color:#c9cbce}
+.rail .count{font:11px/16px var(--mono);color:var(--quiet)}
+.rail .count:empty{display:none}
+.rail-note{margin-left:auto;font:12px/16px var(--mono);color:var(--quiet)}
+/* Actions sit after the detail buttons: Screenshot (outline) and Share (ink fill, white text). A divider keeps the two groups apart. */
+.rail-acts{display:flex;gap:6px;margin-left:10px;padding-left:16px;border-left:1px solid var(--line)}
+.act{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--line-strong);background:#fff;font:500 13px/16px var(--sans);color:var(--ink)}
+.act:hover{border-color:var(--ink);text-decoration:underline}
+.act.primary{background:var(--ink);border-color:var(--ink);color:#fff}
+.act.primary:hover{background:#36383c}
+.act svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.act[disabled]{opacity:.5;cursor:progress}
+/* A label stack: every state's word ("Screenshot", "Copied", "Saved", "Failed") shares one grid cell, so the button
+   is always as wide as its widest word and never shifts when the visible word changes. */
+.act-label{display:inline-grid;justify-items:start}
+.act-label>span{grid-area:1/1}
+.act-label>span[hidden]{display:block;visibility:hidden}
+/* Short confirmation ("Link copied", "PNG saved") above the rail's right end; gone after 2 s. */
+.act-status{position:absolute;right:24px;bottom:56px;z-index:26;padding:8px 12px;background:var(--ink);color:#fff;font:12px/16px var(--mono)}
+.act-status:empty{display:none}
+
+/* Without JS the panels stay below the screen as plain sections (the rail links jump to them). */
+.panels{padding:0 24px 48px 48px}
+.panel{padding-top:24px}
+.panel-title{margin:0 0 12px;font:600 17px/22px var(--sans)}
+.panel-close{display:none}
+.panel-body:empty::after{content:"Nothing to show for this chart.";color:var(--quiet)}
+/*
+ * With JS each panel is a popover anchored above its rail button (app.js sets --pop-x, the button's centre, and
+ * --pop-bottom, the gap to the window bottom). Sized to content; only the body scrolls, never the page.
+ */
+.js .panels{padding:0}
+.js .panel{display:none;position:fixed;z-index:25;left:clamp(12px,calc(var(--pop-x,50vw) - var(--pop-w) / 2),calc(100vw - var(--pop-w) - 12px));
+  bottom:var(--pop-bottom,56px);--pop-w:min(520px,calc(100vw - 24px));width:var(--pop-w);max-height:min(70svh,calc(100svh - 56px - var(--pop-bottom,56px) - 12px));
+  flex-direction:column;padding:0;background:#fff;border:1px solid var(--line-strong);box-shadow:0 2px 10px rgba(14,15,17,.06)}
+.js .panel.open{display:flex}
+/* Table: as wide as its table plus the insets (20 left, 40 right for the ×), up to 960 px; a wider table scrolls inside.
+   No floor: a one-column table gets a narrow popover. app.js measures it and sets --pop-w so the centring and the window
+   clamp above use the real width. */
+.js .panel.pop-table{width:max-content;max-width:min(960px,calc(100vw - 24px))}
+.js .panel.pop-table .data-wrap{width:max-content;max-width:100%}
+.js .panel.pop-notes{--pop-w:min(760px,calc(100vw - 24px))}
+.js .panel.pop-api{--pop-w:min(720px,calc(100vw - 24px))}
+.js .panel:focus{outline:0}
+/* Caret: a small rotated square on the bottom edge, pointing down at the button (app.js sets --caret-x). */
+.js .panel::after{content:"";position:absolute;bottom:-6px;left:var(--caret-x,50%);width:10px;height:10px;margin-left:-5px;background:#fff;border-right:1px solid var(--line-strong);border-bottom:1px solid var(--line-strong);transform:rotate(45deg)}
+/* No title inside: the ink-filled rail button already names the popover (the h2 stays for screen readers). The × sits in
+   a 40 px lane on the right that the body never enters (a margin, not padding), so scrolled content cannot pass under it. */
+.js .panel-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;margin:0}
+.js .panel-close{display:inline-flex;position:absolute;top:8px;right:8px;z-index:1;width:24px;height:24px;align-items:center;justify-content:center;font:18px/1 var(--sans);color:var(--muted);background:#fff}
+.js .panel-close:hover{color:var(--ink);text-decoration:none}
+/* One inset for all content: 16 px top and bottom, 20 px left; the × lane is the 40 px on the right. */
+.js .panel-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:16px 0 16px 20px;margin-right:40px}
+/* Inside a popover the content's own scroll boxes go: the popover body is the one scroller. */
+.js .panel .data-wrap{max-height:none;overflow:visible}
+.js .panel .api-block pre{max-height:none}
+.js .panel .note-cols{columns:2 300px}
+/* No head rule any more: the first block inside drops its own ink top rule so the popover opens on content, not a line. */
+.js .panel :is(.data-wrap,.download-row:first-child,.cite-list,.api-block:first-child,.note-group:first-child .section-head){border-top:0}
+/* The table's sticky header must stop at the popover's top edge, which is the body's own scroll edge. */
+.js .panel .data-table thead th{top:-16px}
+
+.data-wrap{overflow:auto;max-height:70vh;border-top:1px solid var(--ink)}
+.data-table{border-collapse:collapse;font-size:13px;width:auto}
+.data-table th,.data-table td{border-bottom:1px solid var(--line);padding:6px 16px 5px 0;text-align:left;vertical-align:top}
+.data-table thead th{position:sticky;top:0;background:#fff;font:500 12px/16px var(--sans);max-width:220px}
+.data-table thead th.quiet{color:var(--quiet)}
+.data-table .unit{display:block;font:11px/14px var(--mono);color:var(--quiet)}
+.data-table tbody th{font:12px/18px var(--mono);font-weight:400;white-space:nowrap;color:var(--muted)}
+.data-table td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* A gap: "–" and its mark in the muted colour; the meaning is the cell's title. */
+.data-table td.num.gap{color:var(--quiet);cursor:help}
+/* An unpublished series: in the legend (muted, "not published" after it) but never drawn, so its symbol goes. It has
+   nothing to show or hide, so the entry is inert: no toggle on click, and hovering it does not dim the other lines. */
+.highcharts-legend-item.is-unpublished .highcharts-graph,.highcharts-legend-item.is-unpublished .highcharts-point{display:none}
+.highcharts-legend-item.is-unpublished{pointer-events:none}
+.data-table sup{color:var(--muted);margin-left:2px}
+
+.note-group{margin-bottom:24px}
+.note-group .section-head{border-bottom:1px solid var(--ink);height:auto;align-items:baseline;flex-wrap:wrap;row-gap:2px}
+/* The table number never breaks; the title takes the rest of the line and wraps under it on narrow screens. */
+.note-group .section-head h2{white-space:nowrap}
+.note-group .section-head .quiet{flex:1 1 220px;min-width:0}
+.note-cols{columns:2 420px;column-gap:40px}
+.note-cols .note-row{break-inside:avoid;display:grid;grid-template-columns:24px 1fr;gap:12px;padding:12px 0}
+.note-tag{display:block;font:11px/16px var(--mono);color:var(--quiet);margin-bottom:2px}
+/* Groups block in Notes: one row per group, name + method tag, then the formula (mono) and the members (secondary). */
+.group-list{list-style:none;margin:0;padding:0;columns:2 300px;column-gap:40px}
+.group-list li{break-inside:avoid;padding:10px 0;border-bottom:1px solid var(--line)}
+.group-list .g-line{display:flex;align-items:baseline;gap:8px}
+.group-list .g-formula{margin-top:4px;font:12px/16px var(--mono);color:var(--ink)}
+.group-list .g-members{margin-top:2px;font-size:13px;line-height:18px;color:var(--muted)}
+.note-text{font-size:13px;line-height:19px}
+.note-text p{margin:0 0 6px}
+.note-text a{text-decoration:underline}
+.note-text ul,.note-text ol{margin:4px 0;padding-left:18px}
+
+.download-row{display:flex;align-items:center;gap:16px;border-top:1px solid var(--line);padding:12px 0}
+.download-row:first-child{border-top-color:var(--ink)}
+.download-row>div:first-child{flex:1;min-width:0}
+.download-row b{font:600 14px/18px var(--sans)}
+.dl-links{display:flex;gap:8px}
+.cite-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--ink)}
+.cite-row{display:flex;align-items:flex-start;gap:16px;border-top:1px solid var(--line);padding:12px 0}
+.cite-row:first-child{border-top:0}
+.cite-row>div{flex:1;min-width:0}
+.cite-row p{margin:0 0 4px}
+.cite-row .hash a{text-decoration:underline}
+.cite-all{display:flex;justify-content:flex-end;margin-bottom:8px}
+.api-block{border-top:1px solid var(--line);padding:12px 0}
+.api-block:first-child{border-top-color:var(--ink)}
+.api-head{display:flex;align-items:center;gap:16px}
+.api-head b{flex:1;font:500 13px/16px var(--mono)}
+.api-block pre{margin:8px 0 0;font:12px/18px var(--mono);color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+
+/* ---------------------------------------------------------------- builder */
+.builder{position:sticky;top:56px;width:var(--builder);flex:none;height:calc(100svh - 56px);overflow:auto;overscroll-behavior:contain;border-left:1px solid var(--line);background:#fff;font-size:13px}
+.builder[hidden]{display:none}
+.b-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;height:52px;padding:0 12px 0 20px;background:#fff;border-bottom:1px solid var(--line)}
+.b-head h2{margin:0;font:600 17px/22px var(--sans)}
+.b-head h2:focus{outline:0}
+.icon-btn{width:32px;height:32px;border:0;background:transparent;font:20px/1 var(--sans);color:var(--muted)}
+.icon-btn:hover{color:var(--ink)}
+.b-pad{padding:16px 20px}
+.b-sec{padding:14px 20px;border-bottom:1px solid var(--line)}
+.b-sec h3{margin:0 0 10px;font:500 11px/14px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:flex;gap:8px}
+.b-sec h3 .count{color:var(--quiet)}
+/*
+ * One grid for every control: the section's 20 px side insets are the left and right edges; every select, input and
+ * segmented control is 32 px high, 1 px Border, square, Geist 13 (mono 12 in segments); full-width rows stretch to
+ * both edges.
+ */
+.b-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:10px}
+.b-row label{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+.builder select,.builder input:not([type=checkbox]):not([type=radio]){height:32px;border:1px solid var(--line-strong);background:#fff;padding:0 8px;font:13px/16px var(--sans);color:var(--ink);border-radius:0;box-sizing:border-box}
+.builder select{max-width:100%}
+.b-sec>select{width:100%}
+.hint{margin:8px 0 0;font:11px/16px var(--mono);color:var(--quiet)}
+/* Fields: equal columns that fill the row, the label above in mono 11, the control under it at full column width. */
+.b-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px;align-items:end}
+.b-fields.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.b-fields.one{grid-template-columns:minmax(0,1fr)}
+.b-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.b-field>span{font:11px/14px var(--mono);color:var(--muted)}
+.b-field>:is(input,select){width:100%;min-width:0}
+.b-field>input{font-family:var(--mono)!important}
+.b-check{display:flex;align-items:center;gap:6px;height:32px;color:var(--ink)}
+.b-check input{margin:0;accent-color:var(--ink)}
+/* Segmented controls (chart types, time presets): full width, equal cells. */
+.type-btns,.seg{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);width:100%;border:1px solid var(--line-strong)}
+.type-btns button,.seg button{height:30px;min-width:0;border:0;border-left:1px solid var(--line-strong);background:#fff;color:var(--muted);font:12px/16px var(--mono);padding:0}
+.type-btns button:first-child,.seg button:first-child{border-left:0}
+.type-btns button:hover,.seg button:hover{color:var(--ink)}
+.type-btns button[aria-pressed=true],.seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+.type-btns svg{width:18px;height:17px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linejoin:round;display:block;margin:auto}
+/* Series rows: a fixed swatch column and a fixed Hide column, then the name; all three on one baseline. */
+.series-list{list-style:none;margin:0;padding:0}
+.series-list li{display:grid;grid-template-columns:24px 48px minmax(0,1fr);align-items:center;column-gap:8px;min-height:32px;padding:4px 0;border-top:1px solid var(--line)}
+.series-list li:first-child{border-top:0}
+.series-list li.is-hidden .s-name{color:var(--quiet);text-decoration:line-through}
+.sw-btn{width:24px;height:24px;border:1px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;padding:0}
+.sw-btn .sw{margin:0;width:12px;height:12px}
+.eye{width:48px;height:24px;border:1px solid var(--line);background:#fff;font:11px/1 var(--mono);color:var(--muted);padding:0}
+.s-name{min-width:0;overflow-wrap:anywhere;line-height:18px}
+.layer{border-top:1px solid var(--ink);margin-bottom:12px}
+.layer-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:8px 0}
+.layer-head b{flex:1 1 200px;font:600 13px/18px var(--sans)}
+.layer-head .mono{font-size:11px;color:var(--muted)}
+.link-btn{border:0;background:none;padding:0;font:12px/16px var(--sans);color:var(--muted);text-decoration:underline}
+.link-btn:hover{color:var(--hot)}
+.layer details{border-top:1px solid var(--line)}
+.layer summary{display:flex;align-items:baseline;gap:8px;padding:8px 0;cursor:pointer;list-style:none}
+.layer summary::-webkit-details-marker{display:none}
+.layer summary::before{content:"+";width:10px;font-family:var(--mono);color:var(--quiet)}
+.layer details[open]>summary::before{content:"−"}
+.dim-name{font-weight:500}
+.dim-sum{margin-left:auto;font:11px/16px var(--mono);color:var(--quiet);text-align:right;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dim-body{display:flex;flex-direction:column;gap:8px;padding:0 0 12px}
+.dim-body>.b-field>select{width:100%}
+.quick{display:flex;flex-wrap:wrap;gap:4px}
+.chip{height:24px;border:1px solid var(--line);background:#fff;padding:0 8px;font:11px/1 var(--mono);color:var(--muted)}
+.chip:hover{border-color:var(--ink);color:var(--ink)}
+.m-filter{width:100%}
+.tree{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto;border:1px solid var(--line)}
+/* The master checklist is indented by tree depth; the selected members on top are a flat list (no indent). */
+.tree li{padding-left:calc(6px + var(--d) * 14px)}
+.tree li.is-sel{padding-left:6px}
+.tree li.sel-end{border-bottom:1px solid var(--line);margin-bottom:2px;padding-bottom:2px}
+.tree label{display:flex;align-items:flex-start;gap:6px;padding:3px 6px 3px 0;cursor:pointer}
+.tree label:hover{background:#f6f6f7}
+.tree input{margin:2px 0 0;accent-color:var(--ink)}
+.tree .m-parent{color:var(--quiet);font:11px/16px var(--mono)}
+.tree .tree-more{padding:6px 6px 6px 8px;font:11px/16px var(--mono);color:var(--quiet)}
+/* Groups: region chips, then one block per group (name field, method tag, combine select, Remove; members under it). */
+.groups{border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:8px}
+.g-head{font:11px/16px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--quiet)}
+.group-row{display:flex;flex-direction:column;gap:4px}
+/* The name takes the whole first line; the method tag, the combine select and Remove sit on the second. */
+.g-top{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.g-label{flex:1 0 100%;min-width:0;font-weight:500}
+.g-top select{flex:none;width:104px;height:24px;font:11px/1 var(--mono);margin-left:auto}
+.group-row .g-members{font:11px/16px var(--mono);color:var(--quiet);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Name + "Group checked": the name takes the row, the button keeps its width; both 32 px. */
+.groups>.b-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:0}
+.groups>.b-row .btn{height:32px}
+.g-name{min-width:0}
+/* Method tag: mono 11 outline, the same in the builder and in Notes. "not combined" and "not in table" are muted. */
+.m-tag{flex:none;padding:0 5px;border:1px solid var(--line-strong);font:11px/16px var(--mono);color:var(--ink);white-space:nowrap}
+.m-tag:is(.m-not_combined,.m-missing){color:var(--muted);border-style:dashed}
+.sw-btn.is-shade{border-color:transparent}
+.add-table{margin-top:8px}
+.add-table input{width:100%}
+.cube-hits{list-style:none;margin:4px 0 0;padding:0}
+.cube-hits button{width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:#fff;padding:6px 0;font:13px/17px var(--sans)}
+.cube-hits button:hover{text-decoration:underline}
+.cube-hits .mono{font-size:11px;color:var(--muted)}
+.b-sec details summary{cursor:pointer;font:500 13px/18px var(--sans)}
+.steps{margin:8px 0 0;padding:0;list-style:none;font-size:12px}
+.steps li{display:grid;grid-template-columns:90px 1fr auto;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
+.warn-line{color:var(--hot)}
+
+@media (max-width:900px){
+  .view-head{padding:12px 16px;flex-direction:column;align-items:stretch;gap:10px;min-height:0}
+  #head h1{font-size:24px;line-height:30px}
+  .screen{height:calc(100svh - 56px);min-height:0}.stage{flex:1;min-height:0;padding:0 8px 0 12px}
+  .rail{padding:0 8px;gap:4px;overflow-x:auto}.rail a{padding:0 8px;flex:none}
+  .blank,:is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) .blank{inset:0 12px}
+  /* Blank states: the stage takes the window under the top bar and the rail; the card stays centred. */
+  :is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) .stage{height:auto}
+  /* Home on phones: the cards go two to a row under the centre card (which spans both), and the page scrolls. */
+  body[data-status=idle]{height:auto;overflow:visible}
+  body[data-status=idle] main.app{height:auto}
+  body[data-status=idle] .screen{height:auto}
+  body[data-status=idle] .stage{flex:none}
+  body[data-status=idle] .blank{position:static;inset:auto;padding:12px}
+  .hl-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:none;grid-auto-rows:minmax(150px,auto)}
+  .hl-centre{grid-column:1/-1;grid-row:auto;padding:28px 20px}
+  .hl-cta{font-size:22px;line-height:28px}
+  .hl-card{padding:12px 14px 10px}
+  .hl-value b{font-size:26px;line-height:32px}
+  .rail-note{display:none}
+  .rail-acts{margin-left:auto;padding-left:8px;gap:4px}.act{padding:0 8px;flex:none}
+  /* Phones: icons only for the actions (the labels stay as accessible names); the detail buttons keep their words. */
+  .act{font-size:0;gap:0}.act svg{width:16px;height:16px}
+  .act-status{right:8px;left:8px;bottom:56px;text-align:center}
+  .panels{padding:0 16px 48px}
+  /* Popovers become a bottom sheet over the chart: full width, above the rail, body scrolls. */
+  .js .panel,.js .panel:is(.pop-table,.pop-notes,.pop-api){--pop-w:100vw;left:0;right:0;width:auto;min-width:0;max-width:none;bottom:var(--pop-bottom,48px);max-height:calc(100svh - 56px - var(--pop-bottom,48px));border-left:0;border-right:0;border-bottom:0;border-top:1px solid var(--ink);box-shadow:none}
+  .js .panel::after{display:none}
+  /* Phones: the sheet spans the window edge to edge; content keeps a 16 px inset from the sheet edge. The 40 px right
+     inset is a white lane (the body's own background, not just padding), so a wide table scrolling sideways stops at it
+     and never passes under the ×. */
+  .js .panel-body{padding:16px 0 16px 16px;margin-right:40px}
+  /* builder becomes a bottom sheet */
+  .builder{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;height:72vh;border-left:0;border-top:1px solid var(--ink);z-index:30}
+}

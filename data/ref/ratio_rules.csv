@@ -1,0 +1,4 @@
+measure_pattern,numerator,denominator,scale,dimension
+^Unemployment rate$,Unemployment,Labour force,100,Labour force characteristics
+^Employment rate$,Employment,Population,100,Labour force characteristics
+^Participation rate$,Labour force,Population,100,Labour force characteristics

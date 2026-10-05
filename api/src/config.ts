@@ -1,4 +1,13 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { Db, requireMount } from "./db.ts";
+
+// api/.env (gitignored) holds local paths and TYPESAFE_API_KEY. Variables already set in the environment win.
+const envFile = fileURLToPath(new URL("../.env", import.meta.url));
+if (existsSync(envFile)) process.loadEnvFile(envFile);
+
+export const DEFAULT_PUBLIC_ORIGIN = "https://statcan2.ca";
+export const publicOrigin = () => (process.env.PUBLIC_ORIGIN || DEFAULT_PUBLIC_ORIGIN).replace(/\/+$/, "");
 
 /** Read the environment shared by the HTTP server and the MCP server, check the mounts, and open the database. */
 export async function openFromEnv() {
@@ -16,5 +25,5 @@ export async function openFromEnv() {
     requireMount(codeSets, uuid);
     if (captureDir) requireMount(captureDir, uuid);
   }
-  return { db: await Db.open(buildDir, normalizedDir, codeSets), captureDir };
+  return { db: await Db.open(buildDir, normalizedDir, codeSets, uuid), captureDir };
 }

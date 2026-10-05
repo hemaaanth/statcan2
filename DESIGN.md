@@ -1,32 +1,28 @@
-# Site design (v3)
+# Site design (v4)
 
-Paper file: **StatCan data site — v2**, page **v3**:
-https://app.paper.design/file/01M3TVE47E7BRK0HRR0B6B3W9E/p-6-0
-
-The Paper frames and this file must agree. If they disagree, fix one of them before building.
-
-Older pages in the same file (v2, v2.1, the "Radical command" pages) are superseded. Do not build from them.
+This file is the source of truth for site design. Keep it short and current.
 
 ## Direction
 
 The site is a data terminal. It is a serious tool, not a marketing site.
 
-- The home page is only a search input.
-- Search results are a grid of cards. Each card is one series with a small chart.
-- A card opens a chart that fills the screen. Controls sit inside the chart.
-- Every value on screen is a published value or a simple change computed from published values.
+- There is no search. The user types what they want to understand and lands on a chart at once. The planner (`GET /api/v1/plan`) picks the tables, members, period, transform and chart type.
+- One app screen at `/`: the question box at the top, the chart under it, panels under the chart, and a chart builder in a right sidebar that is closed by default.
+- The search results screen (v3 02 Results) and the single-series chart screen (v3 03 Chart) are removed. Their URLs redirect to the app screen.
+- Charts show human-readable dates. Sources, notes, downloads and the API live in panels under the chart.
+- Every value on screen is a published value or a simple, named transform of published values (% change, index, share, sum).
 
-## Rules for every frame
+## Rules for every screen
 
-1. **No notes on mockups.** Every word in a frame is text a real user would read on the real site. Design notes go in this file, never on the canvas.
-2. **Grids fit the viewport.** Desktop frames are 1440 wide. Every card, cell and label fits inside its box at that size. Nothing is cut off. Long titles wrap inside a fixed title area; they do not push other rows out of line.
-   - **App screens** (01 Home, 02 Results, 03 Chart) fill the browser window at any size. They do not scroll. The frames are drawn at 1440 × 900 only as a reference. In code there is no max width and no fixed height: the 03 plot grows with the window in both directions, and the top bar and the control rail run the full width.
-   - **Document pages** (04 Table, 05 Place, 06 Census, 07 Developers) are 1440 wide and as tall as their content (`fit-content`). The key content sits in the first 900 px: the header, the meta strip, and the main list or grid with its right rail. The page ends with the footer.
+1. **No design notes on pages.** Every word on a page is text a real user reads. Design notes go in this file.
+2. **Grids fit the viewport.** Desktop screens are checked at 1440 × 900 and 1900 × 1040. Every card, cell and label fits inside its box. Nothing is cut off. Long titles wrap inside a fixed title area; they do not push other rows out of line.
+   - **App screen** (`/`) is exactly one window high in every state and never scrolls, either way, at any size: head band, plot and rail fill the window, and the plot takes all the height left. Chart details (Table, Notes, Download, Cite, API) open as popovers over the plot, never as sections below it. With the builder open, only the builder scrolls, inside itself. Checked by script: `scrollHeight <= innerHeight` and `scrollWidth <= innerWidth` for the blank states at 390 × 700, 1024 × 700, 1440 × 900 and 2236 × 1266, and for results pages (with and without the builder) at 390 × 844, 1440 × 900 and 2236 × 1266. In code there is no max width and no fixed height: the plot grows with the window in both directions.
+   - **Reference pages** (`/api`, `/mcp`) keep the same 56 px top bar and 48 px footer as the app. Their article scrolls between those fixed rows, so the footer has the same top and height at 1440 × 900 on home, chart and reference pages.
    - Rows in lists use a minimum height, not a fixed height, so a long title wraps and the row grows.
 3. **Real data only.** Every number, title, member, note and ID comes from a build on the SSD (`v0` and its Normalized build `n4` for WDS tables, `census-full-1` for Census tables). Never invent a value.
 4. **Not official.** The site must not look like a Government of Canada service. No maple leaf, no FIP bar, no government colours or wordmark. Every page with a footer says "Independent. Not affiliated with Statistics Canada." Statistics Canada is named only as the source of the data.
-5. **Check before hand-off.** Take a screenshot of each frame at 1x and 2x, and look for clipped text, overlaps and lines that do not align.
-6. **Desktop only.** There are no mobile frames in v3.
+5. **Check before hand-off.** Screenshot changed screens at 1440 × 900 and 1900 × 1040. Look for clipped text, overlaps and lines that do not align.
+6. **Desktop first.** The app screen also works on a phone: the head band stacks, the plot is 60 % of the viewport height, and the chart builder becomes a bottom sheet. Document pages are desktop only.
 
 ## Visual rules
 
@@ -34,16 +30,31 @@ The site is a data terminal. It is a serious tool, not a marketing site.
 
 | Name | Value | Use |
 |---|---|---|
-| Paper | `#FFFFFF` | page background, cells |
+| Background | `#FFFFFF` | page background, cells |
 | Ink | `#0E0F11` | text, sparklines, active tab underline, input underline, primary button |
 | Secondary | `#5A5F66` | secondary text, links in the top bar |
 | Tertiary | `#9AA0A6` | IDs, footers, axis labels, placeholder text |
 | Rule | `#E6E7E9` | lines between cells and sections |
 | Grid | `#EDEEF0` | chart gridlines |
+| Band | `#F4F5F6` | the faint band behind x categories that belong to a group that was not combined |
 | Border | `#C9CBCE` | chart baseline, key caps, toggle borders |
-| Red | `#D80621` | **only** the main chart line and its latest-value tag, the active state (the `›` prompt in an input, the "TOP MATCH" label, the selected row marker, the active statistics segment underline, the selected cross-tab cell, the current vintage marker), and the stroke in the logo |
+| Red | `#D80621` | slot 0 of the chart palette (so a one-series chart is red), the `›` prompt, the warning marker `!`, the selected row marker, the active statistics segment underline, the selected cross-tab cell, the current vintage marker, the focus ring, and the stroke in the logo |
 
-Red is never a background fill for large areas. There are no other accent colours. Comparison lines are ink or grey.
+Red is never a background fill for large areas. Outside charts there are no other accent colours.
+
+#### Chart palette
+
+Ten categorical slots, CSS variables `--c0` … `--c9` in `api/public/app.css`. A spec stores slots, never hex (`chart.colors`, `ViewSeries.color`). Slots are assigned in series order, so the first series is always red.
+
+| Slot | Value | Slot | Value |
+|---|---|---|---|
+| 0 | `#D80621` red | 5 | `#CC79A7` pink |
+| 1 | `#0E0F11` ink | 6 | `#3A8DC4` sky |
+| 2 | `#2A5DB0` blue | 7 | `#813131` brown |
+| 3 | `#C27400` orange | 8 | `#7341D6` violet |
+| 4 | `#2E9C5A` green | 9 | `#A50D72` magenta |
+
+The palette was chosen for colour-blind separation: under simulated protanopia, deuteranopia and tritanopia (Machado 2009, full severity) every pair of slots stays at least ΔE 12 apart (closest: green/sky under tritanopia, red/orange under deuteranopia). Every slot has at least 3:1 contrast on white. Above ten series, slots repeat; the legend, the data table and the builder name every series, so colour is never the only key.
 
 ### Type
 
@@ -54,9 +65,9 @@ Red is never a background fill for large areas. There are no other accent colour
 
 | Use | Font | Size / line | Weight |
 |---|---|---|---|
-| Home input | Geist | 40 / 48 | 500 |
-| Chart title | Geist | 44 / 48 | 600 |
-| Big value (top match) | Geist | 44 / 48 | 600 |
+| Question box (app screen) | Geist | 18 / 24 | 500 |
+| Chart title | Geist | 32 / 38 | 600 |
+| Blank-state message | Geist | 28 / 34 | 500 |
 | Section or card title | Geist | 17 / 22 | 600 |
 | Card value | Geist | 22 / 28 | 600 |
 | Body, controls | Geist | 14 / 18 | 400–500 |
@@ -68,193 +79,141 @@ Red is never a background fill for large areas. There are no other accent colour
 
 - Square corners everywhere. No border radius.
 - No shadows. No gradients.
-- Lines are 1 px `Rule`. The only 2 px lines are the home input underline, the active tab underline, the active statistics segment underline (red) and the current vintage marker (red, on the left edge of the row). A 1 px `Ink` rule sits over a stats row, a meta strip, and every section list.
+- Lines are 1 px `Rule`. The only 2 px lines are the question box underline, the active tab underline, the in-flight progress line, the active statistics segment underline (red) and the current vintage marker (red, on the left edge of the row). A 1 px `Ink` rule sits over a stats row, a meta strip, and every section list.
 - Cells in a grid are separated by 1 px gaps on a `Rule` background, not by borders on each card.
 - Spacing steps: 4, 8, 12, 16, 20, 24, 32, 48.
 - Page side padding: 48 px left, 24 px right (the right side holds the top bar links).
 
 ### Charts
 
-- One line in red is the series. There is one series per chart in v3 (no compare).
-- Line width 1.5 px for sparklines, 2 px for full charts. The latest point is a dot.
+- Chart types: `line`, `area`, `bar`, `stacked_bar`, `stacked_bar_100`, `stacked_area` (the spec's `chart.type`). Bars can be horizontal. The builder shows each type as a 16 px stroke icon.
+- Line and area charts are for time series. Bar charts are for one period across categories (x is a dimension), or for discrete periods where a line would imply a trend. Census snapshot tables use bars.
+- Stacked bars and stacked areas are for parts that add up (counts, currency). `stacked_bar_100` shows each part as a % of its bar.
+- Colours come from the 10-slot palette (see Colour). Each series has its own slot. The user can change a slot in the builder.
+- **Groups.** A combined group (published aggregate, sum, or recomputed ratio) is one series with its own slot, like any other. A group that could not be combined (`group` set, `group_method` null) shows each member, and its members are one hue family: the slot of the first member, each next member mixed lighter with white (100 % down to 45 %). Ink has no hue to shade, so a family never uses slot 1; it takes the first free hued slot. The family stays together in the legend, and each member is named with its group (`Prairies · Manitoba`). On x-category bars, the members of a group that could not be combined sit on a faint `Band` (`#F4F5F6`) with the group name in mono 11 at the top; combined categories need no band (the category is the group).
+- **Two y axes** at most, one per unit. The first unit's labels are on the right, the second unit's on the left. With two axes, each axis title names its unit, and the head band shows the warning "two unit axes are shown".
+- **Results need 2+ points.** A time chart with one visible series and fewer than two published values draws nothing and says "One period only, so there is no line to draw. The values are in Table." A flat single series says "Constant at <value> across the period." Every hidden series says "Every series is hidden. Show one in the chart builder."
+- Line width 2 px. Markers only when a series has fewer than 40 points.
 - Gridlines are horizontal only, `Grid` colour. The baseline is `Border`.
-- Y labels sit on the right edge in Geist Mono 11 px tertiary. X labels are years.
-- The latest value has a red tag on the y axis. The hover point has an ink date tag on the x axis and a readout box.
-- Nothing sits on top of the plot except the hover readout. Titles and stats go in a band above the plot.
-- The readout is drawn above everything and is never clipped. It sits beside the pointer on the side away from the line, and flips to the other side near an edge.
+- Y labels in Geist Mono 11 px tertiary. Value-axis labels from 10,000 up are compact (`250K`, `1.25M`, `2M`, `3.2B`), so the widest label never runs out of its slot and is never cut; tooltips and the Table keep full values. X labels are years (time) or member names in mono 12 secondary (categories). Category labels never overlap and never rotate 45°: under 20 categories they wrap into their slot, up to 3 lines, then end in `…`. The full name is always in the tooltip and the Table panel.
+- **Many categories (20 or more).** Bars turn horizontal by default, so every label reads on one line (cut at 240 px with `…`). Each category gets its own row (22 px for stacked bars, more for grouped bars), and the plot scrolls inside the stage. The value axis stays fixed at the top, and the legend moves above the plot so it stays in view. The 152 CMAs/CAs and the 166-row Census geographies use this layout. The builder's Horizontal box shows the effective state; unchecking it writes `chart.horizontal: false`, and then vertical labels stand at 90°.
+- The legend sits under the plot, left aligned, Geist 13 ink, one square swatch per series. Clicking a legend item toggles that series for this session only; the builder's Hide toggle writes `chart.hidden` into the spec.
+- Method line: when a group's value is not what a reader would assume, one mono 12 secondary line under the sub line says how it was made, one line per method: `Prairies, Atlantic: recomputed as Unemployment ÷ Labour force × 100`, `Provinces: published as Canada`. Sums get no line. A group that could not be combined has its warning instead.
+- Gap note: `ViewResult.gap_note`, when set, is one more line in the same style, after the method lines ("Calgary and Toronto Food are not published by Statistics Canada.", "Some periods are not published; breaks in the lines mark them."). When it is shown, the engine's per-series `no_data` warnings are not (the note says the same in words). When a `substituted_geography` warning or the planner's reason already names the unpublished members, only the time part shows (`gap_parts.time`), or no gap line at all.
+- Tooltip: shared, white, 1 px ink border, square, 9 px inset on every side. A small table: the period in Geist Mono 11 secondary on top, then one row per series: an 8 px square swatch and the name in Geist 12, the value right-aligned in its own column (600, tabular numbers), and the status mark with its official meaning in mono (`E use with caution`). Nothing wraps.
+- Nothing sits on top of the plot except the tooltip. Titles go in a band above the plot.
 - No credit, licence or help lines on a chart. Licence notes go on 07 Developers.
-- A blank value is a gap. A published zero is zero.
+- **Gaps.** A blank value is a gap (`connectNulls: false`). A published zero is zero. A missing period stays in the series as a null point, so a line breaks there. A published point with a gap (or the series' end) on both sides gets a 3 px marker, or it would not show. Hovering a gap period lists that series in the tooltip with `–` in muted text, then its mark and official meaning (`– x suppressed to meet the confidentiality requirements of the Statistics Act`), or "Not published" when there is no mark. The swatch of a gap row is an outline. On bars, a missing bar is a 10 px muted `–` on the baseline, along the bar's direction (vertical and horizontal bars); a stacked bar gets one only when its whole stack is missing.
+- **Unpublished series** (`ViewSeries.unpublished`: nothing published in the window, such as Calgary × Food). It has no line, no bar and no tooltip row. It stays in the legend, after the drawn series: its name in tertiary, then "not published" in mono 11, with no swatch; the entry does not toggle and does not dim other lines on hover. If every series is unpublished, the plot shows the gap note as its blank-state message.
 
 ## Components
 
 | Component | Spec |
 |---|---|
-| **Top bar** | 56 px high, padding 0 24 0 48, gap 32. Logo in a 132 px slot. Search field 440 × 36 with 1 px rule border, red `›`, query in Geist Mono 14, `/` key cap. Links "API" and "About" at the right, Geist 14 500 secondary, gap 28. 1 px rule under the bar (not on Home). On a data screen the links are replaced by actions: Download, Cite, API (Geist 14 500 ink with a 14 px line icon) and a Share button (ink fill, white text). |
-| **Logo** | 22 × 22 SVG: four 2 px ink bars and a 2.5 px red diagonal stroke. Then "tally" in Geist 19/22 600, letter-spacing −0.03em. |
-| **Tabs** | 56 px high. Label Geist 15 500 plus a mono count. Active tab is ink with a 2 px ink underline. Others are secondary. |
-| **Series card (small)** | 341 px wide, padding 20, gap 12. Title area is a fixed 64 px: title Geist 17/22 600 (up to 2 lines), then a 13 px sub line. Sparkline fills the middle. Value row 28 px: value, change in mono, spacer, vector ID in mono 11 tertiary. |
-| **Series card (top match)** | Two columns wide. Red "TOP MATCH" label in mono 11. Title Geist 28 600, sub line with the table title and place. Big value at the top right (44 px) with "Aug 2026 · +3.0% 1Y" in mono under it. Full-history red chart with gridlines. Footer row in mono 11 tertiary: table number, vector, span, and an `open ↵` hint at the right. |
-| **Control rail** | 60 px band along the bottom of the chart screen, 1 px rule on top, padding 0 24 0 48, gap 24. Full width. Left: range toggle and the date span in mono 12, a 1 × 24 divider, a "Notes 8" button. Right: source line in mono 12 tertiary, then a Chart / Table toggle. |
-| **Segmented toggle** | 30 px high, 1 px `Border` outline, 1 px `Rule` between segments. Range segments are mono 12, 40 px wide. The active segment is an ink fill with white text. The others are secondary text on white. |
-| **Button** | 30 px high, 1 px `Border` outline, padding 0 10, Geist 14 500 ink. An optional 12 px icon or a mono count follows the label. |
-| **Stats row** | Under a 1 px ink rule. Cells 150 px wide with a 1 px rule between them. Mono 11 uppercase labels (`AUG 2026`, `1 MONTH`, `1 YEAR`), letter-spacing 0.06em, over Geist 28/32 600 values. |
-| **Readout** | 170 px white box, 1 px ink border, padding 10 12 12. Mono 11 date, Geist 24 600 value, mono 12 change line ("+8.2% on Jun 2021"). |
-| **Footer** | Geist Mono 12 tertiary. Left: "Independent. Not affiliated with Statistics Canada." Right: source line for what is on screen. |
-| **Page header** | Document pages only. Padding 32 24 0 48. Mono 12 kicker in ink (`TABLE 18-10-0006-01`, `PLACE 2021A000235`, `DEVELOPERS`), then a tertiary mono qualifier (`formerly CANSIM 326-0022`, `Census of Population, 2021`). Title Geist 40/44 600. Sub line Geist 14 secondary. |
-| **Meta strip** | Under a 1 px ink rule, padding 24 24 0 48. Cells sit side by side with a 1 px rule between them, padding 10 32 0 16. Mono 11 uppercase label, letter-spacing 0.06em, tertiary. Value Geist 15/20 500 ink with tabular numbers. Only fields that exist are shown. |
+| **Top bar** | 56 px high, wordmark at left (padding 48), "API" and "MCP" at right (padding 24), and no rule under it on any page. The search box is centred on the viewport, not on the space between the wordmark and the nav, at one width, min(640 px, viewport − 440 px), 40 px high, 8 px from the top: the same x, y and width on the app screen, the home page and every reference page (`api/public/topbar.css`). It has a red `›`, Geist 18, a 2 px ink underline and no outline; reference pages submit it to `/?q=`. On the app screen a 2 px progress line runs along the bar's bottom edge while a request is in flight. The chart's actions sit in the detail rail, not in the top bar. Phones (≤ 900 px): the box fills the space after the wordmark and the nav is hidden. |
+| **Logo** | The mark, 20 px, 8 px gap, then "statcan" in Geist 19/22 600, tight tracking, followed by "(2)" in red Geist Mono 15/22 500. The mark is the favicon: a white rising line ending in a red dot on an ink tile (`brand/README.md`). No government wordmark or maple leaf. |
+| **Head band** | Above the plot, padding 20 24 12 48. Eyebrow in mono 12 secondary, one line, cut with an ellipsis: one source table shows its number (ink, linking to the official Statistics Canada table in a new tab) then `·` and the table title, with the full title in a tooltip (`14-10-0397-01 · Labour force characteristics by family structure, monthly…`); several tables show only their numbers, each linked, with titles in tooltips. Title Geist 32/38 600 (from `ViewResult.title`; it describes the chart, not the table). Sub line Geist 15 secondary, parts joined by ` · `, each part only once: `ViewResult.subtitle`; then the period from `ViewResult.period` (`Aug 2025 – Aug 2026`, one date when from = to) unless the subtitle already names it; then the axis units unless the subtitle names them; then the transform name only when the title does not already say it (a title with "% change" drops "% change over window"). Example: "Gasoline vs Food by province, % change over 1 year" / "Aug 2025 – Aug 2026 · %". Warnings (`ViewResult.warnings`) follow as mono 12 lines with a red `!`, never as a modal. "Also" offers the planner's alternatives as one mono 12 line of links, each cut to 36 characters; the row is absent when there are none. An alternative over the same tables with another chart type reads "as area chart" (etc.); other alternatives show the planner's label. The "Chart builder" button sits at the right, aligned to the bottom of the band; it is ink-filled while the sidebar is open. |
+| **Detail rail** | 48 px band under the plot with no top rule, padding 0 24 0 48. One row of small buttons: Table, Notes (count), Download, Cite (count when more than one source), API; then, after a 1 px `Rule` divider, the two actions: **Screenshot** (outline, camera icon) and **Share** (ink fill, white text, share icon). Each button is 28 px high, Geist 13 500, count in mono 11 tertiary; a detail button whose popover is open is ink-filled with white text. On phones the two actions show icons only (their names stay as accessible labels). A short confirmation ("Link copied", "Chart copied", "PNG saved") shows for 2 s in an ink box above the rail's right end. The independence line sits at the right in mono 12 tertiary (hidden on phones). Buttons and actions are hidden in the blank states. |
+| **Screenshot** | Copies the export PNG to the clipboard (`navigator.clipboard.write` with a `ClipboardItem` holding the PNG's Promise, so Safari keeps the click's user activation); the rail's status line says "Chart copied" (on phones the button is an icon). If the clipboard cannot take an image (no `ClipboardItem`, not a secure context, or the write is refused), the same PNG downloads, named from the title (`renter-vs-owner-by-province.png`), and the status line says "PNG saved". The button's label reads "Copied", "Saved" or "Failed" for 1.5 s; every label shares one grid cell, so the button never changes size. The image is the **Export** below. |
+| **Share** | Copies the published link, `https://statcan2.ca/?q=…&s=…` (the exact chart, with an open popover's `#p-…` if any), and shows "Link copied"; its label reads "Copied" for 1.5 s in a box of fixed size. On touch devices with `navigator.share` it opens the system share sheet instead. Local testing can point the link elsewhere with `?origin=…` (not copied into the link). |
+| **Export** | One look for the Screenshot PNG and the OG image (`/og/chart.png`); the numbers live in `api/public/export-layout.js`, which both renderers import. Screenshot: a fixed 1600×900 canvas at 2× (3200×1800), the same at any window size and builder state; OG: 1200×630, every size scaled by width. 64 px side margins. Top to bottom: eyebrow in Geist Mono 20 red, uppercase, letter-spacing 1.5 px: `STATCAN2.CA` (`STATCAN2.CA / 2 TABLES` for several tables); title Geist 600 56 px on one line, shrinking to 40 px, then cut with `…`; the page's sub line in Geist 24 secondary; method and gap lines in Geist Mono 20 secondary; a 1 px `Rule`. The plot: lines 3.5 px, markers only on isolated points, axis labels Geist Mono 18 secondary, light gridlines, ticks at least 150 px apart, each axis titled with its unit when there are two. Legend: a line chart with 1–4 drawn series gets direct labels at the line ends instead (Geist 20 in the series colour, name then the last value in 600, pushed apart so they never overlap); otherwise one legend row of 14 px swatches and Geist 19 names, wrapping to at most 2 rows; over 12 series, the top 12 by last value and "+N more"; unpublished series listed as on screen ("not published"). A single bar series has no legend. Then a 1 px `Rule` and the footer in Geist Mono 18 secondary: `Source: Statistics Canada · Table 18-10-0004-01` at left (all tables, cut with `…` if too long), `statcan2.ca · Sep 2016 – Aug 2026` at right. The image never names the request host. Geist and Geist Mono are loaded for every character drawn before the canvas is drawn, and the plot's SVG embeds them, so no glyph falls back or drops (checked: every "s" of "Seasonally adjusted"). |
+| **Detail popover** | Opened by its rail button; one at a time. It sits above its button, centred on it and clamped 12 px inside the window, with a 10 px caret pointing down at the button. White, 1 px `Border`, a very light shadow (0 2 10 ink at 6 %) only to lift it off the plot. No title inside: the ink-filled rail button says which one is open (the name stays for screen readers). A 24 px × sits in the top-right corner, in a 40 px lane on the right that content never enters, so it covers nothing even when a wide table scrolls. All content has one inset: 16 px top and bottom, 20 px left (16 px on phones). The body is the only part that scrolls (it never scrolls the page). Width: Download and Cite 520 px, API 720 px, Notes 760 px; Table is as wide as its table plus the insets (no blank area to the right) up to 960 px, and a wider table scrolls inside. Never wider than the window minus 24 px. Height fits the content up to 70 % of the window, and never above the top bar. It closes on the same button, × , Esc, or a click outside; focus moves into it on open, Tab and Shift+Tab stay inside it, and focus returns to its button on close. `#p-table`, `#p-notes`, `#p-download`, `#p-cite`, `#p-api` open the matching popover on load, so old links keep working. A new chart keeps the open popover, re-filled and re-anchored; a blank state closes it. On phones (≤ 900 px) it is a bottom sheet: full width, directly above the rail, up to the top bar, 1 px ink rule on top, no caret, no shadow. Without JavaScript the five panels appear as plain sections below the screen, each with its title, and the rail buttons are links to them. |
+| **Chart builder** | Right sidebar, 380 px, 1 px rule on the left, full height under the top bar, scrolls on its own. Closed by default. Head "Chart builder" with a × close. Every control sits on one grid: the section's 20 px insets are the left and right edges, and every select, input and segmented control is 32 px high, 1 px `Border`, square, Geist 13 (Geist Mono 12 in segments, mono in date fields). Field labels sit above their control in mono 11 secondary. Sections, each with a mono 11 uppercase label: Chart (the six type icons as one full-width segmented control with equal cells; for bars, Horizontal and Sort in two equal columns), Time (Latest 1Y 2Y 5Y 10Y 20Y Max as one full-width segmented control; From and To in two equal columns under it, plus At in a third for x-category charts), Transform (a full-width select; "Index = 100 at" adds a base field under it, empty for the first published point, or a period `2015`, `2015-06`, `2015-Q2`, written as `index_base`), Series (fixed 24 px swatch and 48 px Hide columns, then the name, on one line), Tables (one block per layer: table number, title, Remove; then one collapsible row per dimension: name and a mono summary such as `series · 10 selected`; inside, the Use select at full width, quick sets as mono chips, a search box above 8 members, the member list, and groups), Add table (search, then one row per hit), and a collapsed "How this was chosen" list of planner steps. On phones it is a bottom sheet, 72 % of the viewport high, with a 1 px ink rule on top; the same grid holds at 320 px. |
+| **Member list** | At most 200 rows, never the whole dimension (a Census geography has 63,404 members). Without search text: the checked members first, as a flat list in the order they were picked (no indent, a rule under the last one), then the master checklist in tree order, indented 14 px per level. With search text: the matches across all members, in member order, each with its parent in mono 11 tertiary (`Saskatoon · Division No. 11`), because many places share a name. A mono 11 tertiary last row says how many more there are ("63,204 more members; search to find them", "3,668 more matches; type more to narrow"). Typing re-renders only that list, about 120 ms after the last key. |
+| **Segmented control** | 32 px high, full width, equal cells, 1 px `Border` outline, segments in mono 12. The active segment has ink fill and white text. |
+| **Button** | 32 px, 1 px `Border` outline, Geist 13 500, underlined on hover. Primary is ink fill with white text. The focus ring is 2 px red with a 2 px offset. |
+| **Blank state** | Fills the plot area, centred both ways on the band between the top bar and the rail, with no rule of its own and an even 24 px side inset (12 px on phones). Message in Geist 28/34 500 tertiary ("Continue typing", "Sorry, nothing found"), centred text. |
+| **Home grid** | The idle state. Key-indicator cards fill the window under the top bar on a white page: 4 columns at desktop, the 2×2 centre card in columns 2–3 of rows 1–2, `grid-auto-flow: dense` so the cards fill every cell around it (12 cards + the centre = 4 × 4; 1440 × 900 never scrolls). Each cell draws its own 1 px `Rule`. There is never a grey block, a placeholder or an empty cell: cards that would leave a part-filled last row are hidden for that layout. Mid widths (901–1199 px): the centre card is a band across the top, cards three to a row. Phones: two to a row, the page scrolls. Before the cards arrive only the centre card shows, with no frame. Indicator card (a link to `/?q=…&s=…`): label in Geist 13 500 secondary; the number in Geist 34 600 tabular, compact (`41.8M`, `$2.57T`, `6.4 %`, `169.8 2002=100`); the change with ▲ green / ▼ red / ▶ secondary and its kind (`+3.0% 12-month change`, `0.0 pts monthly change`); the period and table in Geist Mono 11 tertiary (`Q3 2026 · 17-10-0009-01`); a 5-year sparkline in its palette slot along the bottom. Centre card: a thin up arrow, "Type anything into the search bar" in Geist 28 600, and "Compare places, group regions, see change over any window, or index to a year." in Geist 15 secondary; clicking it (or Enter / Space) focuses the search box. Data: `GET /api/v1/highlights`. |
+| **Data table** | In the Table popover. Sticky header. First column: the period (mono 12 secondary) or the category. One column per series: swatch, name, unit in mono 11 tertiary; an unpublished series' head is tertiary with "not published" under its name. Values right-aligned in mono with tabular numbers; a status mark as a superscript with its meaning as a tooltip. A gap cell is `–` and its mark in tertiary (`– x`), with the meaning (or "Not published") as its tooltip. Latest period first, at most 500 rows; a mono line says when rows are cut, and Download has every row. The popover body scrolls; the table has no scroll box of its own. |
+| **Footer** | One 48 px row at the bottom of every screen, with no horizontal rule. Geist Mono 12 tertiary. Reference pages show the disclaimer at left and a page-specific line at right. The app uses this same row as its detail rail and carries the disclaimer at right. |
+| **Reference page** | `/api` and `/mcp` use one readable column, about 820 px wide. Geist 40/44 600 title, 22/28 section titles, generous 48 px section spacing, thin list rules, and very light code tints. No cards, rounded corners or shadows. |
 | **Section head** | Title Geist 16/20 600, then a count in mono 12 secondary, then a spacer, then a right-hand line in mono 12 tertiary. Padding-bottom 12. A 1 px ink rule under it starts the list. |
 | **List row** | Min-height 40, padding 10 0 9, gap 16, 1 px rule under each row. Codes and IDs in mono, text in Geist 14. Fixed-width slots for IDs and numbers so columns align across rows. |
 | **Note tag** | Mono 11 tertiary, e.g. `note 9`, after a member or dimension name. It links to that note. |
 | **Archived tag** | Mono 11 tertiary `archived` before the frequency. The row's title and numbers turn tertiary. Archived tables are listed, never hidden. |
-| **Download row** | Format name Geist 14 600, file name and size in mono 12 secondary, then a line with a short sha256 (`4a31a2ba…7c2f`) and the build or capture date in mono 11 tertiary. The button sits at the right: the first download is the primary button (ink fill), the others are outline buttons. Both show a 12 px down-arrow icon. |
-| **Cite block** | The citation string in Geist 14, then a mono 11 tertiary build line (`build v0 · normalized n4 · capture baseline`) and a Copy button at the right. |
-| **API block** | The `GET` lines this page uses, in mono 12, one per line. "Developers →" at the right of the head links to 07. |
+| **Download row** | Title Geist 14 600, a mono 12 secondary sub line, then the buttons at the right with a 12 px down-arrow icon. The first download is the primary button (ink fill), the others are outline buttons. On document pages the sub line holds the file name, size, and a short sha256. |
+| **Cite block** | The citation string in Geist 14, then a mono 11 tertiary line (`captured 30 Sep 2026 · build v0 · normalized n4 · <table URL>`) and a Copy button at the right. One block per source table; "Copy all" above them when there are several. |
+| **API block** | A mono 13 label (`POST /api/v1/view`), a Copy button, then the request in mono 12 secondary, wrapped. "Developers →" under the last block links to 07. |
 | **Record** | Key–value rows. Key in mono 11 uppercase tertiary, 116 px slot. Value Geist 14 ink. A row is hidden when its field is empty (a Census table has no CANSIM row). |
-| **Notes** | Two columns of notes, numbered with the note number as published (gaps in the numbering stay). If a note belongs to a dimension or member, a mono 11 tertiary tag with that name sits above the text. The head's right-hand line is "As published by Statistics Canada". Note text is never shortened. |
+| **Notes** | First a "Calculation" block when the view has `index_note` (how the index base was taken, e.g. "Index uses the first published point in 2016 as 100, when available."), then a "Groups" block when the view has groups (both are ours, not Statistics Canada's): one row per group, two columns, the label in 600 with its method tag, then the formula in mono 12 ink and the members in Geist 13 secondary. Then the published notes, grouped by source table (section head: table number, count, title), then by scope: table notes, then dimension notes, then member notes. Two columns, numbered with the note number as published (gaps in the numbering stay). A dimension or member note has a mono 11 tertiary tag (`Products and product groups · All-items`) above its text. Note HTML is rendered, but only the tags StatCan uses survive (a, b, i, em, strong, br, p, ul, ol, li, sup, sub); links keep only an http(s) or mailto href and open in a new tab. "(opens new window)" hints are removed. Note text is never shortened. "As published by Statistics Canada" closes the list. The Notes count on the rail includes the calculation and the groups. |
+| **Method tag** | Mono 11, 1 px `Border` outline, padding 0 5: `published`, `sum`, `ratio`. `not combined` and `not in table` are secondary with a dashed outline. Used in the builder and in Notes. |
 
 ## Screens
 
 Each screen lists the API data it needs. Endpoints are in `api/README.md`.
 
-### 01 Home
+### 01 App screen (`/`)
 
-Frame `01 Home`.
+One screen does everything: the question box, the head band, the plot, the detail rail with its popovers, and the chart builder.
 
-- Top bar with logo, API and About only. No search in the bar.
-- One input, 880 px wide, centred a little above the middle. Red `›`, an ink caret, placeholder "Search 8,271 Statistics Canada tables", a `↵` key cap, a 2 px ink underline.
-- One row of example queries in Geist Mono 13: `cpi canada`, `population ontario`, `farms by province`, `18-10-0006-01`. Each one runs that search.
-- Footer with the independence line and "Source: Statistics Canada".
+**Input to chart.**
 
-Data: the 8,271 count is `GET /api/v1/coverage` (inventory count). Do not hard-code it.
+- The question box has focus on load (without scrolling) and keeps it while the user types, except on the home page with an empty box, where the placeholder plays the typing demo. It does not take focus when the URL has a `#panel` hash or something else already has focus. Placeholder "What do you want to understand?".
+- **Typing demo** (home only, in the same top-bar box): the placeholder types a query a character at a time, holds it, deletes it and types the next. It stops when the box gets focus or a key; leaving an empty box starts it again. With `prefers-reduced-motion` it shows whole queries, one every 3 s. Tab or → in an empty box takes the query on show and plans it. The queries (one array in `app.js`, from the planner): cost of living by province, past 10 years · gas vs. food inflation, ontario, rate of change · population vs inflation since 2018 indexed to 2015 · unemployment rate, provinces vs. territories · population growth, prairies vs. atlantic, since 2000 · employment in goods producing vs service producing industries by province as stacked bars · rent inflation Toronto vs Montreal · real gdp, year-over-year change, past 20 years · deaths by cause in ontario · average weekly earnings by industry.
+- About 250 ms after the last keystroke, the page calls `GET /api/v1/plan?q=<text>&view=1`. Each new keystroke aborts the previous request. The progress line shows while a request is in flight.
+- The old chart stays on screen until the new answer arrives. There is no flash and no spinner over the plot.
+- The URL names the exact chart, always. Once a chart is on screen the address is `/?q=<text>&s=<spec>`, where `s` is `encodeSpec(ViewResult.spec)`: the server's resolved spec, so members are ids (not roles or labels) and it carries chart type, horizontal, sort, colours, hidden series, transform and time window. A link with `s` runs that spec as is and never calls the planner; `q` only refills the question box. A link with only `q` plans, and then gets its `s`. Typing replaces the history entry (`replaceState`), first with only `q` and then with `q` + `s` when the chart lands; Enter and every builder edit add an entry (`pushState`), so Back and Forward step through charts exactly. Blank states carry only `q`. An open detail popover is in the hash (`#p-table`, `#p-notes`, `#p-download`, `#p-cite`, `#p-api`) and is part of a shared link; opening or closing one does not add a history entry.
+- First paint is server-rendered: the server runs the planner (or the spec in `s`) and embeds the state as JSON, so there is never a blank first paint. Without JavaScript the page still shows the head band, the blank-state message, and every panel, including the data table.
 
-### 02 Results
+**States** (from `PlanResult.status`). The exact strings:
 
-Frame `02 Results — cpi canada`.
+| State | When | Chart area |
+|---|---|---|
+| idle | empty input | the home grid (key-indicator cards around the centre card); the typing demo plays in the search box |
+| need_more | the input is a fragment (`c`, `the`) | "Continue typing" |
+| no_match | unrelated to anything StatCan publishes | "Sorry, nothing found"; then `PlanResult.reason` when there is one, in Geist 15/22 secondary, centred under it (max 560 px): "The Canadian Shield does not follow province borders; no Statistics Canada table publishes it as a province group."; then `alternatives` as links when there are any |
+| ok | a spec ran | the chart |
 
-- Top bar with the query in the search field.
-- Tabs: "Series 11" (active) and "Tables 23".
-- Grid: 4 columns × 341 px, 1 px gaps, starting at x 48. Row 1 is 312 px (top match over 2 columns + 2 small cards). Rows 2 and 3 are 216 px (4 small cards each).
-- Small cards show the last 10 years. The top match shows the full history.
-- Footer: independence line on the left; "Values as published by Statistics Canada · <table> · released <date>" on the right.
+In the three blank states there is no head band, no builder button, no rail buttons and no popovers. The rail keeps only the independence line, at the bottom of the window. No rule is drawn under the top bar (on any page). If the builder or a popover is open when the input turns blank, it closes. A view error from a builder edit is not one of these states: it keeps the builder open, and the builder scrolls inside itself.
 
-Data:
+**Chart builder.** It is closed by default. The head band button opens it. Esc closes it and returns focus to the button. It edits the spec directly. Each edit is posted to `POST /api/v1/view` about 200 ms later and re-renders. If an edit is invalid, the last good chart stays and the server's error shows as a warning line.
 
-- Series tab shows only series with **2 or more published points** (`n_published >= 2`). A single value is not a chart. Single-period values (for example one Census cell) are reached through the Tables tab and the table page.
-- Order: text match first, then more published points first (`n_published` descending), then the latest end date first.
-- Series tab: `GET /api/v1/series?q=…`. Card value is the latest `value`; the change is computed from the point 12 periods earlier, labelled `1Y`.
-- Sparklines: `GET /api/v1/series/{pid}/{vector}` points.
-- Tables tab: `GET /api/v1/tables?q=…`.
-- If a query matches more cards than fit, the grid pages. It never scrolls past the footer inside the window.
+- Member selections are written in the shortest form that is exact: a role set (`{role:"province"}`, `{any:[province, territory]}`), `{childrenOf:id}`, `{all:true}`, else `{in:[ids]}`.
+- A dimension can be fixed (one member, radio buttons), series, x (bars only; only one x across the view) or sum.
+- **Groups** (series or x dimensions; mono 11 uppercase "Groups" label with a count). On a geography dimension, one chip per region from `GET /api/v1/regions` that has a member in this table (physiographic regions never; a region already grouped is not offered again). A chip adds `{label, members: {region}, region}` and takes those members out of the plain selection. A custom group names the checked members ("Group checked"); the checked members then show only as that group. Each group is a block: its name in an input on its own line (renaming keeps its colour and hidden state), then the method tag the last view used, a combine select (Auto, Published, Sum, Ratio; Auto writes no `agg`) and Remove (its members return to the selection), then its members in mono 11 tertiary on one line. At most 20 groups.
+- Groups and their members are part of the spec, so the link, Share, Back/Forward and the PNG keep them. The resolved spec writes an empty selection as `{in: []}`, which the spec schema refuses; links and builder edits write it as `{not: {all: true}}` instead.
+- Add table searches `GET /api/v1/cubes?q=` and adds the table with its first suggested view (`GET /api/v1/cubes/{pid}/views`). At most 4 tables.
 
-### 03 Chart
+**Detail popovers** (from the rail, one at a time; all from the current `ViewResult`):
 
-Frame `03 Chart — All-items`.
+- **Table**: the data table, built from series × points.
+- **Notes**: `notes[]` from every source table in the view, merged and grouped (see Notes).
+- **Download**: "This view" (Parquet, CSV from `links.parquet` / `links.csv`, exactly what the chart shows), then one row per source table with the full-table Parquet (`/api/v1/tables/{pid}/observations.parquet`) and, when the capture is mounted, the official ZIP with its CSV (`/api/v1/tables/{pid}/source.zip`).
+- **Cite**: every `sources[].citation`, with captured date, build, table URL and Copy.
+- **API**: a curl for `POST /api/v1/view` with the current spec, the `GET /api/v1/view?s=` link, and the MCP `run_view` call with the spec JSON.
 
-- Top bar with the query, and Download, Cite, API and Share at the right.
-- The chart fills the space between the top bar and the control rail.
-- **Header band** above the plot, from x 48 to the right padding, top 24. Left: mono 12 line "18-10-0006-01 · Consumer Price Index", title "All-items" Geist 44/48 600, sub line "Canada · Index, 2002=100 · Monthly, seasonally adjusted" in Geist 15. Right, aligned to the bottom of the title: the stats row (latest, 1 month, 1 year), three 150 px cells under a 1 px ink rule. The band has no background and no border. It never overlaps the plot.
-- Chart: plot from x 48 to the window width minus 80 (y labels sit in those 80 px), and from under the header band to the top of the control rail. At 1440 wide that is x 48 to x 1360, gridlines every 20 index points, y labels at x 1372, year labels under the baseline. Latest value 169.3 in a red tag on the y axis.
-- The chart screen has no footer. The chart uses the full height.
-- Hover readout near the pointer: date, value, change on the same month a year earlier.
-- Control rail: Range `1Y 5Y 10Y 20Y Max` (Max active), "Jan 1992 – Aug 2026", "Notes 8". Right side: "Statistics Canada · 18-10-0006-01 · v41690914 · released 14 Sep 2026", then Chart | Table.
-- Table mode replaces the chart with a dense table of every point. It never shows both.
-- **Range buttons are links**: `?range=1Y|5Y|10Y|20Y|max` (default `max`). They work without JavaScript. The chosen range sets the active button, the date span text, and both axes: the x axis covers only that span and the y axis rescales to the values in it. If the series is shorter than a range, that button is disabled.
-- **No compare** in v3. No "+ Compare" button and no link to raw JSON from the chart screen. JSON is reached through the API button.
+Data: `GET /api/v1/plan`, `POST /api/v1/view`, `GET /api/v1/cubes`, `GET /api/v1/cubes/{pid}`, `GET /api/v1/cubes/{pid}/views`. Static files are served from `api/public` at `/static/`.
 
-Data: `GET /api/v1/series/{pid}/{vector}` for points, labels, unit and citation. `GET /api/v1/tables/{pid}` for notes and release time. Cite copies the `citation` string.
+### Removed screens and their URLs
 
-### 04 Table
+- v3 02 Results is gone. `/search?q=` redirects (302) to `/?q=`.
+- Dedicated table, series and place pages are gone. `/tables/{pid}` redirects (301) to `/?q=<table number>`; `/series/*` and `/places/*` redirect (301) to `/`. Their JSON API routes remain.
 
-Frame `04 Table — 18-10-0006-01`. A WDS table with a time dimension.
 
-- Top bar with the query that led here.
-- Page header: `TABLE 18-10-0006-01` and `formerly CANSIM 326-0022`; title "Consumer Price Index, monthly, seasonally adjusted"; sub line "Prices and price indexes · Survey 2301, Consumer Price Index".
-- Meta strip: Frequency, Period, Unit, Geography, Series, Rows, Released, Corrections.
-- Body, left (904 px): **Series** list, one row per series. Column header in mono 11 uppercase: the row dimension's name, `LAST 10 YEARS`, the latest period (`AUG 2026`), `1 MONTH`, `1 YEAR`, `VECTOR`. Member names are indented by their parent level. Each row has a 10-year sparkline (ink, latest point as a dot), the latest value, the two changes in mono, and the vector in mono 11 tertiary. The head's right-hand line names the fixed members and the row dimension ("Geography: Canada · rows by Products and product groups"). A row opens 03 Chart.
-- Body, right rail: **Download** (Parquet, then Source ZIP), **Cite**, **API**, then "Original table on statcan.gc.ca ↗".
-- Lower, left: **Dimensions**. One column per dimension: its position, name, note tag and member count. Under it, one row per member: position, name (indented by level), and for geography the code in mono.
-- Lower, right: **Table record**: product ID, CANSIM, French title, subject, survey, frequency, first issued, last release, status, corrections.
-- **Notes** across the full width, then the footer.
+### API reference (`/api`)
 
-Data: `GET /api/v1/tables/{pid}` (title, dimensions, members, notes, corrections, record fields), `GET /api/v1/tables/{pid}/series` (series rows and sparklines), the size and `X-Content-SHA256` of the two files.
+- Free, read-only JSON over HTTPS. Three copy-ready quick starts show real, trimmed responses for plan, view and observations.
+- Endpoint rows cover every `/api/v1` route, grouped as Charts, Tables, Series, Places, Files and Build. The one OpenAPI document is linked.
+- Copy buttons keep one fixed width when their label changes.
 
-### 05 Place
+### MCP reference (`/mcp`)
 
-Frame `05 Place — Ontario`. One place and every table that covers it.
-
-- Page header: `PLACE 2021A000235` and `DGUID · 2021 vintage`; title "Ontario"; sub line "Province of Canada · 55 tables in 14 subjects".
-- Meta strip: Place ID, Level, In, Geo code, Vintages, Tables, Subjects, Series, Last release.
-- **Key series**: 4 small series cards in one row, same card spec as 02. They come from a fixed list per level (see below), never from the first rows of a search. The change uses the table's own step: `1Y` for monthly, quarterly and annual series, `5Y` for census years. The head's right-hand line is "Latest published value · Ontario".
-- Body, left: **Tables** grouped by subject. Each group has a head with its name and count. Columns: table number (mono), title, frequency, period, series count. Archived tables use the archived tag.
-- Body, right rail:
-  - **Same place**: one row per vintage (`2021A000235`, `2016A000235`, `2011A000235`) and the province code (`code:0002:35`). The current vintage has a 2 px red marker on its left edge. Under the rows, one line says how a table is matched to this place.
-  - **Part of**: the parent place with its ID and an arrow.
-  - **Subjects** with a count for each. A subject links to its group.
-  - **API**.
-- Footer.
-
-Data: `GET /api/v1/places/{place_id}` (place, parent, vintages, tables grouped by subject with the member ID and series count), `GET /api/v1/series?place_id=…` for the key series.
-
-Key series list (province or territory), in order:
-
-1. Population, quarterly: 17-10-0009-01.
-2. Unemployment rate, monthly: 14-10-0287-01 (Labour force characteristics, both sexes, 15 years and over, seasonally adjusted).
-3. Consumer Price Index, All-items, monthly: 18-10-0004-01.
-4. GDP at basic prices, all industries, annual: 36-10-0222-01.
-
-If a listed table is not in the current build, skip it. Fill the empty slots with the place's other series that have `n_published >= 2`, the latest end date first, then the most published points. Never show an archived table or a series with one point. In `n4` only 17-10-0009-01 of this list is present.
-
-### 06 Census table
-
-Frame `06 Census`. Example 98-10-0222-01, from `census-full-1`.
-
-A Census table has one reference period and no vectors. So the main view is a cross-tab, not a line chart.
-
-- Page header: `TABLE 98-10-0222-01` and `Census of Population, 2021`; the full title; a sub line with the survey and the population.
-- Meta strip: Kind ("Census · one reference period"), Reference, Geography, Dimensions, Cells, Released, Corrections.
-- Body, left: **Cross-tab**.
-  - Head right-hand line names the row and column dimensions ("Rows: Age (13B) · columns: Knowledge of official languages (5)").
-  - **Geography** is a dropdown (240 px, outline, member code in mono). A line at the right says which places it holds.
-  - **Statistics** is a segmented control, one segment per member of the statistics dimension. The active segment has a 2 px red underline.
-  - The grid: row labels indented by level, values right-aligned in mono with tabular numbers, totals in 600. Columns use the member names, wrapped to two lines when long.
-  - The selected cell has a 1.5 px red border.
-  - Under the grid, the **cell strip**: the cell's coordinate in mono, its labels, then every statistic for that cell in a stats row (the selected one large). A line says that Census cells have no vector ID, with the `table · coordinate` reference and a Copy button.
-- Body, right rail: Download, Cite (with `build census-full-1`), API (including `GET /api/v1/series/98100222/c/7.11.4.1`), original table link.
-- Lower: Dimensions (all 4, statistics included) and Table record. Empty record fields are hidden.
-- Notes with dimension tags, then the footer.
-
-Rules for Census values:
-
-- A cell whose status is `...` (not applicable) shows `...`. It is never drawn as 0.
-- A blank value shows its status or symbol. A published zero shows 0.
-
-Data: the same table and series endpoints as 04, with series keyed by `(pid, coordinate)`. This needs the combined Normalized build (see below).
-
-### 07 Developers
-
-Frame `07 Developers`.
-
-- Top bar with "API" as the active link (ink, 600).
-- Page header: `DEVELOPERS` and `REST · MCP · files`; title "API, MCP and downloads"; one sub line.
-- Meta strip: Base URL, Methods (GET only), Key (None), Tables, With observations, Series, Places, Build.
-- Body, left: **Endpoints**, 15 routes in 5 groups (Tables 4, Series 3, Places 2, Files 2, Build 3). Each group has a 40 px head with an ink top rule and a count. Each route row: `GET` in mono 12 tertiary (36 px slot), the path in mono 13 (340 px slot), a one-line description, and an optional parameter line in mono 11 tertiary.
-- Body, right rail: **Example**, a real request (`GET /api/v1/series/18100006/v41690914`), its two build headers, and a trimmed JSON body. Then **Cite**: the citation string and why to pin both build IDs.
-- Lower, left: **MCP**, the six tools (`search_tables`, `search_series`, `get_place`, `get_table`, `get_series`, `get_observations`) with their arguments, then the client config. The config uses `<repo>` and `<data>` placeholders, never real local paths.
-- Lower, right: **Builds** (n4, census-full-1, v0, baseline, newest first, with counts and build time in UTC) and **Reading values** (a blank value is not zero; `value` is the published string and `value_num` is derived; Census cells have no vector).
-- Footer right: "build v0 · normalized n4 · capture baseline".
-
-Data: the meta strip and Builds come from `GET /api/v1/build` and `GET /api/v1/coverage`. Do not hard-code them. The route list matches `GET /api/v1/openapi.json`.
+- The hosted Streamable HTTP endpoint is `https://statcan2.ca/api/mcp`.
+- The server URL comes first, in one copy block. Then one row per client: a mono logo, the name, and its setup steps or snippet. Clients: Claude, Claude Code, ChatGPT, Codex, Gemini CLI, Grok (xAI API), Le Chat, Cursor, VS Code · Copilot, Windsurf, OpenCode, then local stdio.
+- Client logos are inline SVGs from `@lobehub/icons-static-svg` (MIT), in `api/src/client_icons.ts`. They use `currentColor`.
+- The tool list comes from the MCP server's shared tool metadata: name, one-line purpose and inputs. Each input shows its name and plain words (`pid` table ID); `m1`–`m9` show as one entry. The name column is 200 px, the same as the client rows.
+- Example prompts show chart comparison, regional analysis and table discovery.
 
 ## Data and hand-off
 
 - Design only with fields that exist. Check `SCHEMA.md` or the files on the SSD first.
 - If a screen needs a field that does not exist, ask the data thread. Do not draw the field until it exists, or mark the screen as waiting on it here.
-- When a screen is final, send its Paper link to the API thread. The API thread builds from the frame and this file.
-- Build IDs on mockups are the real IDs at the time of drawing: Clean `v0`, Normalized `n4`, capture `baseline`, and Clean `census-full-1` for Census tables. The site reads them from `/api/v1/build`.
+- When a screen changes, update this file and then build it in `api/`.
+- Build IDs on examples are real IDs: Clean `v0`, Normalized `n4`, capture `baseline`, and Clean `census-full-1` for Census tables. The site reads them from `/api/v1/build`.
 - `n4` is the Normalized build of `v0` only. 06 Census and the Census tables on 05 need the planned full Normalized build, which combines `wds-full-1` and `census-full-1`. In it, Census tables have `kind=snapshot`, `family=census_2021`, `queryable=true` when Clean observations exist, series keyed by coordinate, geography members mapped to `place_id`, and `...` kept as a status with a blank value.
 
 ## Open questions
 
-1. **Stable view URLs.** Series URLs are stable (`/series/18100006/v41690914`). Full table views and Census cells need a URL form for member filters and coordinates.
+1. **Stable view URLs.** Answered: a view is `/?q=<text>&s=<encodeSpec(ViewResult.spec)>`, written on every chart, not only after a builder edit (see 01). The server resolves every MemberSel to ids in `ViewResult.spec`, so a shared link opens the same chart after a planner or build change, as long as those member ids still exist in the table. Census cells use the same form with every dimension fixed. Length: base64url JSON. Measured on n8: CPI 256 characters, a two-table view 362, 44 CMAs × 3 age groups 515 URL characters, 166 geographies × 7 tenures 1,259; the ceiling is a spec at the 500-member limit, about 4,300. A compact form (raw-DEFLATE before base64url, about 1,600 characters at 500 members) is on hold: today's views fit, and it would need a versioned `decodeSpec` in `spec.ts`.
 2. **Hosted MCP.** The design shows the local stdio setup. A hosted endpoint does not exist yet.
 3. **Key series on a place page.** 05 uses a fixed list for provinces (see 05). Lists for Canada, CMAs, census divisions and health regions are still to be written. There is no field that ranks series for a place yet.

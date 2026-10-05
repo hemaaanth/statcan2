@@ -1,5 +1,4 @@
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
-import path from "node:path";
+import { createReadStream, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { Hono, type Context } from "hono";
 import { Db, MAX_DIMS, MAX_LIMIT, MAX_SERIES, type SeriesDetailResult } from "./db.ts";
@@ -43,7 +42,7 @@ export function apiRoutes({ db, captureDir }: Config) {
 
   api.get("/build", (c) => c.json({
     ...provenance, built_at_utc: m.built_at_utc, inventory: m.inventory, code_sets: db.codeSets, tool: m.tool, summary: m.summary,
-    normalized: { build_id: n.build_id, built_at_utc: n.built_at_utc, clean: n.clean, codesets: n.codesets, refs: n.refs, tool: n.tool, files: n.files, stats: n.stats, warnings: n.warnings.length },
+    normalized: { build_id: n.build_id, built_at_utc: n.built_at_utc, clean: n.clean, cleans: n.cleans, codesets: n.codesets, refs: n.refs, tool: n.tool, files: n.files, stats: n.stats, warnings: n.warnings.length },
     queryable_tables: Object.entries(m.tables).filter(([, t]) => t.status === "ok").map(([pid]) => pid),
     failed_tables: Object.fromEntries(Object.entries(m.tables).filter(([, t]) => t.status !== "ok").map(([pid, t]) => [pid, t.errors])),
   }));
@@ -70,7 +69,8 @@ export function apiRoutes({ db, captureDir }: Config) {
     const filters = { pid, place_id: c.req.query("place_id") || undefined, unit_family: c.req.query("unit_family") || undefined };
     const limit = Math.min(int(c.req.query("limit"), 50), MAX_LIMIT);
     const offset = int(c.req.query("offset"), 0);
-    const { total, rows } = await db.seriesSearch({ q, ...filters, limit, offset });
+    const { total, rows, limited } = await db.seriesSearch({ q, ...filters, limit, offset });
+    if (limited) c.header("X-Statcan-Search-Scope", "capped");
     return c.json({ ...provenance, q, ...filters, total, limit, offset, results: rows });
   });
 
@@ -79,7 +79,7 @@ export function apiRoutes({ db, captureDir }: Config) {
     switch (result.kind) {
       case "not_found": return c.json({ error: "unknown series", ...provenance }, 404);
       case "too_many_points": return c.json({ error: `more than ${result.limit} points`, ...provenance }, 413);
-      case "inconsistent": return c.json({ error: `Normalized series row says ${result.n_obs} observations, the table has ${result.points} for this coordinate. The Normalized build keys series by vector; Census tables need it keyed by coordinate.`, ...provenance }, 409);
+      case "inconsistent": return c.json({ error: `Normalized series row says ${result.n_obs} observations, the table has ${result.points} for this coordinate. The Normalized build failed its series consistency contract.`, ...provenance }, 409);
       case "ok": return c.json({ ...provenance, citation: db.citation(pid), source_sha256: report.source_sha256, parquet_sha256: report.parquet?.sha256,
         links: { table: `/api/v1/tables/${pid}`, html: `/series/${pid}/${result.series.vector || `c/${result.series.coordinate}`}` }, ...result.series });
     }
@@ -120,7 +120,7 @@ export function apiRoutes({ db, captureDir }: Config) {
       links.observations = `/api/v1/tables/${pid}/observations`;
       links.parquet = `/api/v1/tables/${pid}/observations.parquet`;
     }
-    if (captureDir && existsSync(path.join(captureDir, "zips", `${pid}-en.zip`))) links.source_zip = `/api/v1/tables/${pid}/source.zip`;
+    if (db.sourceZipPath(pid, captureDir)) links.source_zip = `/api/v1/tables/${pid}/source.zip`;
     return c.json({ ...provenance, ...table, links });
   });
 
@@ -162,13 +162,10 @@ export function apiRoutes({ db, captureDir }: Config) {
 
   api.get("/tables/:pid/source.zip", (c) => {
     const pid = c.req.param("pid");
-    if (!/^[0-9]{8}$/.test(pid) || !captureDir) return c.json({ error: "source download not available" }, 404);
-    const zip = path.join(captureDir, "zips", `${pid}-en.zip`);
-    if (!existsSync(zip)) return c.json({ error: "source ZIP not captured" }, 404);
-    const headers: Record<string, string> = {};
-    const manifest = path.join(captureDir, "manifests", `${pid}-en.json`);
-    if (existsSync(manifest)) headers["X-Content-SHA256"] = JSON.parse(readFileSync(manifest, "utf8")).sha256;
-    return file(zip, `${pid}-eng.zip`, "application/zip", headers);
+    const zip = db.sourceZipPath(pid, captureDir);
+    if (!zip) return c.json({ error: "source ZIP not captured" }, 404);
+    const hash = m.tables[pid].source_sha256;
+    return file(zip, `${pid}-eng.zip`, "application/zip", hash ? { "X-Content-SHA256": hash } : {});
   });
 
   return api;

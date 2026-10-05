@@ -25,7 +25,7 @@ Rules that hold across layers:
 | Table | `pid` (8-digit string of the inventory `productId`) | 3,509 tables have no CANSIM ID; titles collide |
 | Dimension | `(pid, dimension_id)` | dimension IDs restart at 1 in every table |
 | Member | `(pid, dimension_id, member_id)` | member IDs are per table; Ontario is member 8 different IDs across 39 tables |
-| Series | `(pid, vector)`; `(pid, coordinate)` is equivalent | both unique per `ref_date` in all 107 checked tables |
+| Series | `(pid, vector)` when `vector` is non-empty; otherwise `(pid, coordinate)` | WDS vectors identify lines; Census has empty vectors, so each coordinate is the stable series key |
 | Observation | `(pid, coordinate, ref_date)` | verified unique whole-file in every built table |
 | Place | `place_id` (ours, below) | the official `DGUID` is missing or non-standard in 40 of 105 tables |
 | Capture / build | `capture_id`, `clean_build_id`, `normalized_build_id` | pinning |
@@ -34,26 +34,25 @@ Rules that hold across layers:
 
 Per table: `obs/<pid>.parquet` with one row per observation, fixed columns (`ref_date`, `dguid`, `uom`, `uom_id`, `scalar_factor`, `scalar_id`, `vector`, `coordinate`, `value`, `value_num`, `status`, `symbol`, `terminated`, `decimals`, `member_id_1..9`). Catalogue: `cube`, `inventory_dimension`, `inventory_correction`, `cube_meta`, `dimension`, `member`, `attribute`, `symbol`, `survey`, `subject`, `note`, `correction`.
 
-Two additions Clean still needs:
+Clean now handles ordinary WDS tables and the 2021 Census WDS-sideways layout. Remaining Clean additions:
 
-- **A Census reader.** Census files are the same metadata blocks plus a sideways observation file: the first N−1 dimensions come from `Coordinate` (`1.1.1.1.1`), the last dimension is spread across columns named `Dim (N):Member[ID]`, each followed by a `Symbol`/`Symbols` column. The reader unpivots each value column into one row, taking the last member ID from the header, and writes the same `obs` schema. *To verify:* what the `Symbol` column carries (status codes are expected), and whether every Census file follows this shape (seen in 3 of 525).
-- **`--jobs N`** so the 35 multi-GB tables do not serialize a full run.
+- **Large-table scheduling.** Keep the 35 multi-GB WDS tables out of parallel builds unless the host has memory headroom.
 
-## Normalized layer (to build)
+## Normalized layer (exists; current gate build `v0/normalized/n4`)
 
-All files under `normalized/<normalized_build_id>/`. Every table carries `pid` where it applies.
+All files under `normalized/<normalized_build_id>/`. Every table carries `pid` where it applies. Large series output is a `series/` Parquet part directory (`*.parquet`, one PID per part) so full Census builds do not need both temporary series parts and a final monolithic file.
 
 ### Code sets (from `getCodeSets`, official)
 
-`frequency`, `subject`, `survey`, `uom`, `scalar`, `status`, `symbol`, `classification_type`, `terminated`: the captured JSON written as Parquet, one file each, columns as given (`code`, `en`, `fr`, `representation_en`, `representation_fr`; status 10 is `<LOD` in English and `<LDD` in French). 17 frequencies, 622 subjects, 903 surveys, 465 units, 10 scalars, 11 status codes, 3 symbol codes. The `x` mark lives in `securityLevel`, not `status`; the API loads that set too. These replace the hard-coded label lookups in the API.
+`frequency`, `subject`, `survey`, `uom`, `scalar`, `status`, `symbol`, `classification_type`, `security_level`, `terminated`: the captured JSON written as Parquet, one file each, columns `code`, `en`, `fr`, `representation`. `security_level` is from official `securityLevel`; its representation `x` labels suppressed cells. These replace hard-coded label lookups in the API.
 
 ### `unit_family` (ours, hand-kept)
 
-One row per `uom_code` seen in the data. Columns: `uom_code`, `family` (`percent`, `count`, `currency`, `index`, `mass`, `time`, `volume`, `rate`, `other`), `symbol` (`%`, `CAD`, `t`, `h`…), `base_year` (for `2024 constant dollars` and single-year index bases like `2002=100`), `note`. StatCan already keys units by code and names are 1:1 with codes (42 of 42 in `v0`), so this table never rewrites a name; it groups codes. Unknown codes get `family = other` and appear in a build warning so the table grows deliberately. Known oddity: `Persons in thousands` (428) appears with scalar `thousands` in three tables and `units` in one; whether that is a double scale is *to verify* per table.
+`data/ref/unit_family.csv` has one hand-kept row for each of the 465 codes in the captured `uom` code set. The Normalized `unit_family.parquet` contains only codes seen in Clean observations (42 in the 105-table `n4-units` sample); Census null units add no row. The CSV columns are `uom_code`, `family`, `symbol` (only standard short display symbols), `base_year` (single-year constant-dollar and index bases), and `note`. Code counts by family: `percent` 10, `count` 79, `currency` 37, `index` 81, `mass` 27, `time` 9, `volume` 23, `rate` 145, `area` 7, `length` 6, `energy` 10, `ratio` 4, `other` 27. Rates, averages, ratios, confidence-interval bounds, statistical weights, and unspecified or non-additive physical units are kept distinct from additive measures. The view engine sums only `count`, `currency`, `mass`, `volume`, `area`, `length`, and `energy`; `time` is not summed because most duration units (days, months, years) hold averages or medians such as median age or job tenure. Names are never rewritten. A future code missing from the CSV falls to `other` with a build warning; `tools/check_unit_family.py <uom.parquet>` checks coverage against a code set before building. Known scale risk: `Persons in thousands` (428) occurs with scalar `thousands` in three tables and `units` in one; whether that is a double scale is *to verify* per table.
 
-### `period` rules (derived per row, stored on `series` and in `obs_normalized`)
+### `period` rules (derived per `ref_date`, stored in `period`)
 
-`ref_date` shapes seen: `YYYY` (68 tables), `YYYY-MM` (29), `YYYY/YYYY` (5, fiscal years), `YYYY-MM-DD` (3). Shape alone does not give the frequency: quarterly tables also write `YYYY-MM`, and one table labelled "Occasional Daily" writes quarterly `YYYY-MM-DD`. So:
+`period.parquet` has one row per `(pid, ref_date)` with `period_start`, `period_end`, and `period_kind`. `ref_date` shapes seen: `YYYY` (68 tables in `v0`), `YYYY-MM` (29), `YYYY/YYYY` (5, fiscal years), `YYYY-MM-DD` (3). Shape alone does not give the frequency: quarterly tables also write `YYYY-MM`, and one table labelled "Occasional Daily" writes quarterly `YYYY-MM-DD`. So:
 
 - `period_start` (DATE) = first day of the period from the text.
 - `period_end` (DATE) = from `frequency_code` when it is a fixed interval (daily, weekly, monthly, quarterly, semi-annual, annual, every N years) else `period_start`. `YYYY` is always a calendar year, even in "every N years" tables. `YYYY/YYYY` → April 1 to March 31 by default; tables that state another split year (17100006 and 17100051 say July 1 to June 30) need a per-table override in `data/ref/period_override.csv` (*to build*). Whether a weekly date starts or ends its week is unstated (*to verify*, 10100073).
@@ -80,11 +79,17 @@ The `place` seed list comes from the DGUIDs and codes present in the data plus t
 
 ### `table` (one row per PID; the search and browse record)
 
-Inventory fields plus: `kind` (`time_series` if `cube_start_date != cube_end_date`, else `snapshot`; all 525 Census tables are snapshots with one 2021 period), `family` (`wds` or `census_2021`; Census is `pid` starting `98` and the sideways layout), `frequency_en`, `subject_en[]`, `survey_en[]`, `queryable`, `clean_build_id`, `row_count`, `series_count`, `period_min`, `period_max`, `unit_families[]`, `place_levels[]` (which geography levels the table covers), `n_places_mapped`, `n_places_unmapped`, `search_text` (title + dimension names + member names + notes, one string for the search index).
+Inventory fields plus: `kind` (`time_series` if `cube_start_date != cube_end_date`, else `snapshot`; all 525 Census tables are snapshots with one 2021 period), `family` (`wds` or `census_2021`; Census is `pid` starting `98` and the sideways layout), `frequency_en`, `subject_en[]`, `survey_en[]`, `queryable`, `clean_build_id`, `row_count`, `series_count`, `period_min`, `period_max`, `unit_families[]`, `place_levels[]` (which geography levels the table covers), `n_places_mapped`, `n_places_unmapped`, and search fields:
 
-### `series` (one row per vector)
+- `search_title`: title only.
+- `search_dimensions`: dimension labels.
+- `search_members`: member labels.
+- `search_notes`: note text with HTML tags removed.
+- `search_text`: compatibility field, concatenating the four fields above.
 
-`pid`, `vector`, `coordinate`, `member_id_1..9`, `label_1..9` (member names, denormalized for display), `place_id` (from the geography dimension, if mapped), `uom_code`, `unit_family`, `scalar_code`, `decimals`, `period_kind`, `period_min`, `period_max`, `n_obs`, `n_published` (non-blank values), `terminated`, `last_status`. Derived by one `GROUP BY` over each Clean file. For a `snapshot` table `n_obs = 1`; the series table is still written so a Census cell has a stable ID, but charts and MCP treat snapshot series as points to compare, not lines. *To measure:* total series across the corpus; 24100055 alone has ~1 M.
+### `series` (one row per vector, or per coordinate when vector is empty)
+
+Physical layout: `series/*.parquet`, one part per built PID. Logical columns: `pid`, `vector`, `coordinate`, `member_id_1..9`, `label_1..9` (member names, denormalized for display), `place_id` (from the geography dimension, if mapped), `uom_code`, `unit_family`, `scalar_code`, `decimals`, `period_kind`, `period_min`, `period_max`, `n_obs`, `n_published` (non-blank values), `terminated`, `last_status`. WDS time series are grouped by `vector`; when the vector is empty, the coordinate is the key. Census Clean verifies one observation per coordinate and strict member-ID order. Census series are projected directly from each observation, with member labels and place IDs from constant lookup lists, so no per-cell `GROUP BY` or second sort is needed. Each Census `series.n_obs` is 1; WDS groups check their counts against the observations. Charts and MCP treat snapshot series as points to compare, not lines. Full `n7` has 50,554,526,028 series: 49,923,588,701 Census cells and 630,937,327 WDS series.
 
 ### `obs_normalized` (view, not a copy)
 
@@ -92,7 +97,21 @@ The API reads Clean `obs/<pid>.parquet` and joins `period_start`, `place_id`, `u
 
 ## Presentation layer
 
-Reads Normalized only. API and site exist (`api/`); they will switch from hard-coded labels to code sets, from `cube` to `table`, and gain `/series` search and `/series/{vector}` with a chart. MCP is a wrapper over four calls: search tables, get table, search/get series, get observations. Charts: Highcharts (non-commercial licence applies; this is a personal, non-profit project).
+The API reads Clean observations on request and joins Normalized periods and unit families.
+No view is stored. DuckDB reads each selected table's Parquet once per view.
+`/api/v1/cubes/{pid}` describes dimensions, roles, members, defaults, and units.
+`/api/v1/cubes/{pid}/views` offers editable starter specs.
+`/api/v1/plan?q=` returns a `PlanResult` from a typed question.
+`/api/v1/view` resolves the spec, validates member selections and sums, and returns chart series.
+Fixed dimensions pick one member. Series dimensions produce lines; x dimensions produce categories.
+Group and sum values require matching additive units and scales. A missing component leaves a gap.
+Time presets use the latest selected period, not the current date.
+Transforms run after sums. Mixed units use at most two axes.
+Notes are scoped to the tables, dimensions, and selected members in the view.
+Each source includes its citation, captured date, marks, and corrections.
+Parquet and CSV exports contain the displayed values, including hidden series.
+Export files are temporary on the Clean build filesystem and removed after streaming.
+The stable `/api/v1` API and its site pages remain available as legacy interfaces.
 
 ## Physical layout
 
@@ -100,7 +119,10 @@ Reads Normalized only. API and site exist (`api/`); they will switch from hard-c
 statcan-wds/<capture_id>/            raw: inventory.json, zips/, manifests/     (SSD now; R2 later)
 statcan-ref/codesets/<ts>/           raw: codeSets.json + sha256
 statcan-derived/<clean_build_id>/    clean: catalogue/, obs/, build_manifest.json
-statcan-derived/<clean_build_id>/normalized/<normalized_build_id>/   places, units, series, table, code sets, manifest
+statcan-derived/<clean_build_id>/normalized/<normalized_build_id>/
+                                      normalized: table.parquet, period.parquet,
+                                      code sets, place/member_place, unit_family,
+                                      series/*.parquet, normalize_manifest.json
 ```
 
 R2 holds the same paths. The API host keeps a local copy of `normalized/` and whichever `obs/` files it serves. Raw ZIPs are served straight from R2.

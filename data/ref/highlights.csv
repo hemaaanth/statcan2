@@ -1,0 +1,13 @@
+id,label,q,pid,members,headline,order
+population,Population,population of Canada quarterly,17100009,1=1,qoq,1
+cpi,CPI all-items,consumer price index Canada 12-month change,18100006,1=1;2=1,yoy,2
+unemployment,Unemployment rate,unemployment rate in Canada monthly,14100287,1=1;2=7;3=1;4=1;5=1;6=1,mom_pts,3
+real_gdp,Real GDP,real gross domestic product Canada quarterly,36100123,1=1;2=1;3=39,qoq,4
+wages,Average hourly wages,average hourly wages Canada 12-month change,14100063,1=1;2=2;3=1;4=1;5=1;6=1,yoy,5
+housing,Housing starts,housing starts Canada monthly,34100158,1=1,mom,6
+retail,Retail sales,retail sales Canada monthly,20100067,1=1;2=1;3=1,mom,7
+gasoline,Gasoline price,regular gasoline price Canada monthly,18100001,1=20;2=2,mom,8
+food,Food CPI,food consumer price index Canada 12-month change,18100004,1=2;2=3,yoy,9
+vacancies,Job vacancies,job vacancies Canada quarterly,14100400,1=1;2=1;3=1,qoq,10
+employment,Total employment,total employment Canada monthly,14100287,1=1;2=3;3=1;4=1;5=1;6=1,mom,11
+shelter,Shelter CPI,shelter consumer price index Canada 12-month change,18100006,1=1;2=3,yoy,12
