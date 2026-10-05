@@ -277,7 +277,7 @@ async function ensureFonts(text) {
 
 /**
  * PNG of the chart for sharing: a fixed 1600×900 canvas at 2× (3200×1800), the same at any window size and builder
- * state, laid out by export-layout.js (the OG image uses the same numbers). Top to bottom: eyebrow, title, sub line,
+ * state, laid out by export-layout.js (the OG image uses the same numbers). Top to bottom: title, sub line,
  * method / gap lines, a rule, the plot (Highcharts, redrawn off screen at export sizes), direct labels or a legend
  * row, a rule, and the footer. Drawn in the browser (SVG → canvas); no exporting module, no export server.
  * Series the user hid on screen this session stay out of the image.
@@ -293,7 +293,7 @@ export async function chartPng(view) {
   const mode = legendMode(shown, { kind });
   const head = headText(view, methodLines(view)), foot = footerText(view);
   const entries = opts.series.map((s, i) => ({ s, v: shown.series[i] })).filter((e) => e.s.visible).sort((a, b) => a.s.legendIndex - b.s.legendIndex);
-  await ensureFonts([head.eyebrow, head.title, head.subtitle, ...head.notes, foot.left, foot.right, ...entries.map((e) => `${e.s.name} ${fmtNum(lastValue(e.v)?.value)}`), "+0123456789 more not published"].join(""));
+  await ensureFonts([head.title, head.subtitle, ...head.notes, foot.left, foot.right, ...entries.map((e) => `${e.s.name} ${fmtNum(lastValue(e.v)?.value)}`), "+0123456789 more not published"].join(""));
 
   const canvas = document.createElement("canvas");
   canvas.width = W * L.pixelRatio; canvas.height = H * L.pixelRatio;
@@ -313,9 +313,6 @@ export async function chartPng(view) {
   const rule = (y) => { ctx.fillStyle = C.rule; ctx.fillRect(M, Math.round(y), inner, 1); };
 
   // Head. The title shrinks 2 px at a time from 56 to 40 px to stay on one line, then ends in "…".
-  ctx.letterSpacing = `${L.eyebrow.letterSpacing}px`;
-  text(head.eyebrow, M, L.eyebrow.y, font(400, L.eyebrow.size, mono), C.accent);
-  ctx.letterSpacing = "0px";
   let titleSize = L.title.size;
   while (titleSize > L.title.minSize && width(head.title, font(600, titleSize, sans)) > inner) titleSize -= 2;
   text(fit(head.title, font(600, titleSize, sans), inner), M, L.title.y, font(600, titleSize, sans), C.ink);
@@ -388,7 +385,7 @@ export async function chartPng(view) {
   const dl = L.directLabel, nameFont = font(400, dl.size, sans), valFont = font(600, dl.size, sans);
   const labelOf = (e) => { const lv = lastValue(e.v); return lv ? { e, name: e.s.name, value: fmtNum(lv.value) } : null; };
   const direct = mode === "direct" ? entries.map(labelOf).filter(Boolean) : [];
-  const labelW = direct.length ? Math.min(380, Math.max(...direct.map((d) => width(d.name, nameFont) + 8 + width(d.value, valFont)))) : 0;
+  const labelW = direct.length ? Math.min(dl.maxWidth, Math.max(...direct.map((d) => width(d.name, nameFont) + 8 + width(d.value, valFont)))) : 0;
   const labelCol = direct.length ? labelW + dl.gap + 4 : 0;
 
   // The plot: the page's chart options at export sizes. Axis 0 on the left (the right side is the label column);

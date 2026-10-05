@@ -2,7 +2,7 @@
 // (/og/chart.png, 1200×630). Numbers, colours and text rules live here; each renderer draws them its own way
 // (canvas in the browser, SVG + resvg on the server). Plain data and pure functions: no DOM, safe to import in Node.
 // Design: thr_a4rp374pwa/export-design.md and DESIGN.md "Screenshot".
-import { PUBLIC_HOST, PUBLIC_ORIGIN, gapLine, periodText, subLine } from "./render.js";
+import { PUBLIC_HOST, PUBLIC_ORIGIN, gapLine, subLine } from "./render.js";
 
 /** The published site (defined in render.js, which the page and API panels also use). */
 export { PUBLIC_HOST, PUBLIC_ORIGIN };
@@ -26,13 +26,12 @@ export const FACES = [{ family: FONTS.sans, weight: 400 }, { family: FONTS.sans,
 export const LAYOUT = {
   width: 1600, height: 900, pixelRatio: 2,
   margin: 64,
-  eyebrow: { y: 88, size: 20, letterSpacing: 1.5 },
-  title: { y: 156, size: 56, minSize: 40 },
-  subtitle: { y: 200, size: 24 },
+  title: { y: 108, size: 56, minSize: 40 }, // cap top near the 64 px margin
+  subtitle: { y: 152, size: 24 },
   note: { gap: 30, size: 20 }, // method / gap lines, 30 px apart below the subtitle
   ruleGap: 26, // from the last head line's baseline to the head rule
   plot: { top: 24, bottom: 16, lineWidth: 3.5, markerRadius: 5, axisLabel: 18, axisTitle: 16, gridWidth: 1 },
-  directLabel: { size: 20, gap: 12, minSpacing: 26, maxSeries: 4 },
+  directLabel: { size: 20, gap: 12, minSpacing: 26, maxSeries: 4, maxWidth: 300 }, // names past maxWidth end in "…"
   legend: { size: 19, swatch: 14, itemGap: 28, rowHeight: 30, maxRows: 2, maxSeries: 12, top: 18 },
   footer: { size: 18, ruleGap: 28, bottom: 44 }, // rule 28 px above the footer baseline; baseline 44 px above the bottom
 };
@@ -44,42 +43,33 @@ export function scaled(width, height) {
   return { ...walk(LAYOUT), width, height, pixelRatio: LAYOUT.pixelRatio, scale: k };
 }
 
-/** "STATCAN2.CA", plus " / 2 TABLES" for a chart from several tables. */
-export function eyebrowText(view) {
-  const n = new Set(view.sources.map((s) => s.pid)).size;
-  return `${PUBLIC_HOST.toUpperCase()}${n > 1 ? ` / ${n} TABLES` : ""}`;
-}
-
 /** Head text: title, the page's sub line, then the method and gap lines that explain a value. */
 export function headText(view, methodLines = []) {
   const gap = gapLine(view, null);
-  return { eyebrow: eyebrowText(view), title: view.title, subtitle: subLine(view), notes: [...methodLines, ...(gap ? [gap] : [])] };
+  return { title: view.title, subtitle: subLine(view), notes: [...methodLines, ...(gap ? [gap] : [])] };
 }
 
 /**
- * Footer: "Source: Statistics Canada · Table 18-10-0004-01" (every table, "Tables …" for several) at left, and
- * "statcan2.ca · Sep 2016 – Aug 2026" at right. `fit(text, maxWidth)` lets the renderer cut the left side with "…".
+ * Footer: "Table 18-10-0004-01" (every table, "Tables …" for several) at left and "statcan2.ca" at right. The period
+ * is already in the sub line. The renderer cuts the left side with "…" when it is too long.
  */
 export function footerText(view) {
   const tables = [...new Set(view.sources.map((s) => s.table_number))];
-  const period = periodText(view);
-  return {
-    left: `Source: Statistics Canada · ${tables.length > 1 ? "Tables" : "Table"} ${tables.join(", ")}`,
-    right: `${PUBLIC_HOST}${period ? ` · ${period}` : ""}`,
-  };
+  return { left: `${tables.length > 1 ? "Tables" : "Table"} ${tables.join(", ")}`, right: PUBLIC_HOST };
 }
 
 /**
  * How the legend shows, by the number of drawn series (an unpublished series is listed but never drawn):
- * "direct": a line chart with 1–4 drawn series and nothing unpublished: labels at the line ends, no legend box.
+ * "none": a single series (the title and sub line say what it is), so the plot keeps the full width.
+ * "direct": a line chart with 2–4 drawn series and nothing unpublished: labels at the line ends, no legend box.
  * "row": a legend row, wrapping to at most `legend.maxRows` lines. Over 12 entries: the top 12 by last value, "+N more".
- * "none": a single bar series (its value axis and the title say what it is).
  */
 export function legendMode(view, { kind }) {
   const shown = view.series.filter((s) => !s.hidden);
   const drawn = shown.filter((s) => !s.unpublished);
+  if (shown.length <= 1) return "none";
   if (kind === "line" && drawn.length && drawn.length <= LAYOUT.directLabel.maxSeries && drawn.length === shown.length) return "direct";
-  return shown.length <= 1 ? "none" : "row";
+  return "row";
 }
 
 /** Last published value of a series, for direct labels and the "top 12 by last value" cut. */

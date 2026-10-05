@@ -20,12 +20,11 @@ const regular = fileURLToPath(new URL("../node_modules/geist/dist/fonts/geist-sa
 const mono = fileURLToPath(new URL("../node_modules/geist/dist/fonts/geist-mono/GeistMono-Regular.ttf", import.meta.url));
 type Layout = {
   width: number; height: number; margin: number; scale: number;
-  eyebrow: { y: number; size: number; letterSpacing: number };
   title: { y: number; size: number; minSize: number };
   subtitle: { y: number; size: number };
   note: { gap: number; size: number }; ruleGap: number;
   plot: { top: number; bottom: number; lineWidth: number; markerRadius: number; axisLabel: number; axisTitle: number; gridWidth: number };
-  directLabel: { size: number; gap: number; minSpacing: number; maxSeries: number };
+  directLabel: { size: number; gap: number; minSpacing: number; maxSeries: number; maxWidth: number };
   legend: { size: number; swatch: number; itemGap: number; rowHeight: number; maxRows: number; maxSeries: number; top: number };
   footer: { size: number; ruleGap: number; bottom: number };
 };
@@ -35,7 +34,7 @@ const { scaled, LAYOUT, COLORS, FONTS, PUBLIC_HOST, headText, footerText, legend
   COLORS: { ink: string; muted: string; quiet: string; rule: string; grid: string; paper: string; accent: string; palette: string[] };
   FONTS: { sans: string; mono: string };
   PUBLIC_HOST: string;
-  headText: (view: ViewResult, methods: string[]) => { eyebrow: string; title: string; subtitle: string; notes: string[] };
+  headText: (view: ViewResult, methods: string[]) => { title: string; subtitle: string; notes: string[] };
   footerText: (view: ViewResult) => { left: string; right: string };
   legendMode: (view: ViewResult, options: { kind: "bar" | "line" }) => "none" | "direct" | "row";
   lastValue: (series: ViewSeries) => { value: number; at: number } | null;
@@ -192,6 +191,10 @@ function plotView(view: ViewResult, visible: Shaded[], { x, y, width, height, mo
     const span = max - min || 1;
     return { top: max + span * .09, bottom: bar ? Math.min(0, min) : min - span * .09 };
   });
+  // Long value labels ("80,000,000") move the plot right so they stay inside the margin.
+  const labelWidth = Math.max(...ticks(domains[0]).map((value) => number(value).length)) * L.plot.axisLabel * .6 + 12;
+  const shift = Math.max(0, L.margin + labelWidth - x);
+  x += shift; width -= shift;
   const py = (v: number, axis = 0) => {
     const { top, bottom } = domains[axis] ?? domains[0];
     return y + height - (v - bottom) / (top - bottom) * height;
@@ -314,7 +317,7 @@ export function chartSvg(view: ViewResult) {
   const plotX = M + (horizontal ? 380 : 60) * L.scale;
   const directWidth = mode === "direct" ? Math.max(0, ...visible.map(({ series }) => {
     const last = lastValue(series);
-    return last ? (series.name.length * .57 + (number(last.value).length + 1) * .6) * L.directLabel.size
+    return last ? Math.min(L.directLabel.maxWidth, (series.name.length * .57 + (number(last.value).length + 1) * .6) * L.directLabel.size)
       + (view.axes.length === 2 ? 60 : L.directLabel.gap) + 24 : 0;
   })) : 0;
   const reserve = horizontal ? 40 : mode === "direct"
@@ -335,7 +338,6 @@ export function chartSvg(view: ViewResult) {
   const rightWidth = foot.right.length * L.footer.size * .61;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${L.width}" height="${L.height}" viewBox="0 0 ${L.width} ${L.height}">
     <rect width="${L.width}" height="${L.height}" fill="${paper}"/>
-    <text x="${M}" y="${L.eyebrow.y}" font-family="${FONTS.mono}" font-size="${L.eyebrow.size}" letter-spacing="${L.eyebrow.letterSpacing}" fill="${accent}">${text(head.eyebrow)}</text>
     <text x="${M}" y="${L.title.y}" font-family="${FONTS.sans}" font-size="${titleSize}" font-weight="600" fill="${ink}">${text(title)}</text>
     <text x="${M}" y="${L.subtitle.y}" font-family="${FONTS.sans}" font-size="${L.subtitle.size}" fill="${muted}">${text(short(head.subtitle, Math.floor(inner / (L.subtitle.size * .54))))}</text>
     ${noteLines}<path d="M${M} ${headRule}H${L.width - M}" stroke="${rule}"/>
@@ -345,18 +347,25 @@ export function chartSvg(view: ViewResult) {
   </svg>`;
 }
 
+// The site card: title, one line on what the site is, and a sample line drawn like an export's series line.
 function siteSvg() {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
     <rect width="1200" height="630" fill="${paper}"/>
-    <text x="64" y="65" font-family="${FONTS.mono}" font-size="15" letter-spacing="1.2" fill="${accent}">${text(PUBLIC_HOST.toUpperCase())}</text>
-    <text x="64" y="148" font-family="${FONTS.sans}" font-size="64" font-weight="600" fill="${ink}">${text(PUBLIC_HOST)}</text>
-    <text x="64" y="202" font-family="${FONTS.sans}" font-size="25" fill="${muted}">Explore and chart published Statistics Canada data.</text>
-    <path d="M64 258H1136M64 546H1136" stroke="${rule}"/>
-    <path d="M80 462L180 446L280 453L380 410L480 424L580 369L680 385L780 341L880 352L980 301L1080 322" fill="none" stroke="${palette[0]}" stroke-width="3" opacity=".4"/>
-    <text x="64" y="591" font-family="${FONTS.mono}" font-size="14" fill="${quiet}">Independent. Not affiliated with Statistics Canada.</text>
-    <text x="1136" y="591" text-anchor="end" font-family="${FONTS.mono}" font-size="14" fill="${quiet}">${text(PUBLIC_HOST)}</text>
+    <text x="64" y="128" font-family="${FONTS.sans}" font-size="72" font-weight="600" fill="${ink}">${text(PUBLIC_HOST)}</text>
+    <text x="64" y="186" font-family="${FONTS.sans}" font-size="28" fill="${muted}">Explore and chart published Statistics Canada data.</text>
+    <path d="${SITE_LINE}" fill="none" stroke="${palette[0]}" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
   </svg>`;
 }
+
+/** A rising, jagged monthly-looking line across the card, 64 px in from each side, from y 566 up to y 286. */
+const SITE_LINE = (() => {
+  const steps = [0, -9, 14, 10, -17, 21, 7, 13, -10, 4, -7, 16, -6, -4, 11, 3, 2, 7, -1, 0, 10, -2, -4, 11, 1, 5, -4, 7,
+    -6, 12, 8, 13, 0, 22, -4, -14, 10, 2, -11, 12, -6, 8, -10, 1, 11, -4, 15, 9, 12, 4, 13, 7, -8];
+  let y = 0;
+  const ys = steps.map((d) => (y += d));
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  return ys.map((v, i) => `${i ? "L" : "M"}${(64 + i * 1072 / (ys.length - 1)).toFixed(1)} ${(566 - (v - lo) / (hi - lo) * 280).toFixed(1)}`).join("");
+})();
 
 function textSvg(title: string, description: string) {
   return frame(title, description, `<path d="M64 240H1136" stroke="${rule}"/>`, "statcan(2) · Statistics Canada data");
