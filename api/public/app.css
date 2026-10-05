@@ -140,6 +140,7 @@ body[data-status=idle] .blank{inset:16px 24px 0 48px;align-items:stretch}
 .act:hover{border-color:var(--ink);text-decoration:underline}
 .act.primary{background:var(--ink);border-color:var(--ink);color:#fff}
 .act.primary:hover{background:#36383c}
+.act svg.act-ok,.act svg.act-fail{display:none}
 .act svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
 .act[disabled]{opacity:.5;cursor:progress}
 /* A label stack: every state's word ("Screenshot", "Copied", "Saved", "Failed") shares one grid cell, so the button
@@ -383,11 +384,14 @@ body[data-status=idle] .blank{inset:16px 24px 0 48px;align-items:stretch}
   .hl-card{padding:12px 14px 10px}
   .hl-value b{font-size:26px;line-height:32px}
   .rail-note{display:none}
+  /* Phones keep Table and Notes; Download, Cite and API are desk work. */
+  .rail a:is([data-tab=download],[data-tab=cite],[data-tab=api]){display:none}
   .rail-acts{margin-left:auto;padding-left:8px;gap:4px}.act{padding:0 8px;flex:none}
   /* Phones: icons only for the actions (the labels stay as accessible names); the detail buttons keep their words. */
   .act{font-size:0;gap:0}.act svg{width:16px;height:16px}
-  /* With no words on the button, a flashed state ("Copied", "Saved") shows its word for its 1.5 s. */
-  .act.flashing{font-size:13px;gap:6px}
+  /* With no words on the button, a flash swaps the icon for 1.5 s: a check when done, a cross when failed. */
+  .act[data-flash] svg{display:none}
+  .act[data-flash=ok] svg.act-ok,.act[data-flash=fail] svg.act-fail{display:block}
   .panels{padding:0 16px 48px}
   /* Popovers become a bottom sheet over the chart: full width, above the rail, body scrolls. */
   .js .panel,.js .panel:is(.pop-table,.pop-notes,.pop-api,.pop-download,.pop-cite){--pop-w:100vw;left:0;right:0;width:auto;min-width:0;max-width:none;bottom:var(--pop-bottom,48px);max-height:calc(100svh - 56px - var(--pop-bottom,48px));border-left:0;border-right:0;border-bottom:0;border-top:1px solid var(--ink);box-shadow:none}

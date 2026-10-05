@@ -305,14 +305,17 @@ function stableLabel(btn, states) {
   stack.setAttribute("aria-live", "polite"); // the flashed word is announced, as the old status line was
   stack.innerHTML = [idle, ...states].map((w, i) => `<span${i ? ` hidden` : ""}>${w}</span>`).join("");
   label.replaceWith(stack);
+  // Phones show icons only: a flash swaps the icon for a check (done) or a cross (failed), never a word.
+  btn.querySelector("svg").insertAdjacentHTML("afterend", '<svg class="act-ok" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>'
+    + '<svg class="act-fail" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>');
 }
 function flashLabel(btn, text) {
   const words = [...btn.querySelectorAll(".act-label > span")];
   if (!words.length) return;
   clearTimeout(btn.flashTimer);
   for (const w of words) w.hidden = w.textContent !== text;
-  btn.classList.add("flashing"); // phones show the word only while it flashes (their actions are icons)
-  btn.flashTimer = setTimeout(() => { words.forEach((w, i) => { w.hidden = i > 0; }); btn.classList.remove("flashing"); }, 1500);
+  btn.dataset.flash = text === "Failed" ? "fail" : "ok"; // phones swap the icon (their actions have no words)
+  btn.flashTimer = setTimeout(() => { words.forEach((w, i) => { w.hidden = i > 0; }); delete btn.dataset.flash; }, 1500);
 }
 
 /** Download the PNG (the fallback when the clipboard cannot take an image). */
