@@ -349,17 +349,19 @@ export function chartSvg(view: ViewResult) {
   </svg>`;
 }
 
-// The site card: the top bar's mark and wordmark at 72 px, one line on what the site is, and a sample line
-// drawn like an export's series line. Sizes and spacing scale the top bar's CSS (19 px wordmark) by 72/19.
+// The site card: the top bar's mark and wordmark at 72 px, one line on what the site is, a sample line drawn like an
+// export's series line, and the domain at bottom right, level with the line's lowest point. Sizes and spacing scale
+// the top bar's CSS (19 px wordmark) by 72/19; the mark's x axis sits on the wordmark's baseline, as in the top bar.
 function siteSvg() {
   const size = 72, k = size / 19, baseline = 128;
-  const mark = 20 * k, markY = baseline - .31 * size - mark / 2;
+  const mark = 20 * k, markY = baseline - mark;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
     <rect width="1200" height="630" fill="${paper}"/>
     <svg x="64" y="${markY.toFixed(1)}" width="${mark.toFixed(1)}" height="${mark.toFixed(1)}" viewBox="0 0 100 100">${BRAND_MARK}</svg>
     <text x="${(64 + mark + 8 * k).toFixed(1)}" y="${baseline}" font-family="${FONTS.sans}" font-size="${size}" font-weight="600" letter-spacing="${(-.03 * size).toFixed(2)}" fill="${ink}">statcan<tspan dx="${(2 * k).toFixed(1)}" font-family="${FONTS.mono}" font-size="${(15 * k).toFixed(1)}" font-weight="500" letter-spacing="${(-.05 * 15 * k).toFixed(2)}" fill="${palette[0]}">(2)</tspan></text>
     <text x="64" y="186" font-family="${FONTS.sans}" font-size="28" fill="${muted}">Explore and chart published Statistics Canada data.</text>
     <path d="${SITE_LINE}" fill="none" stroke="${palette[0]}" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+    <text x="1136" y="566" text-anchor="end" font-family="${FONTS.mono}" font-size="22" fill="${muted}">${text(PUBLIC_HOST)}</text>
   </svg>`;
 }
 

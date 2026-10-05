@@ -115,10 +115,15 @@ const concepts = {
       + `<path class="sw" stroke-width="${small ? 11 : 7}" stroke-linejoin="round" stroke-linecap="round" d="M${pts.map((p) => p.join(" ")).join("L")}"/>`
       + `<circle class="a" cx="${ex}" cy="${ey}" r="${small ? 11 : 9}"/>`;
   },
-  // f. The maple leaf as an area chart: the leaf's top edge is the line, filled red to the bottom of a square ink tile.
-  // An area chart runs to the edges, so padding (`inset`) only moves the top point down; the fill stays full-bleed.
-  f(small, inset = 0) {
-    return `<rect class="ti" width="100" height="100"/><path class="a" d="${leafArea(1400, 14 + inset * 70)}"/>`;
+  // f. The maple leaf as an area chart, red on white, inside an ink axis on the left and bottom. The window runs from
+  // the centre lobe's left tip to the right lobe's outer tip, so the heavy part stands against the y axis.
+  // Fixed fills, not classes: the tile stays white in dark mode. `rx` rounds the favicon only.
+  f(small, rx = 0) {
+    const a = AXIS, k = (100 - a) / 100;
+    return `<clipPath id="f"><rect width="100" height="100" rx="${rx}"/></clipPath><g clip-path="url(#f)">`
+      + `<rect width="100" height="100" fill="${C.paper}"/>`
+      + `<path fill="${C.accent}" transform="translate(${a} 0) scale(${r2(k, 4)})" d="${leafArea(-620, 1790, 10)}"/>`
+      + `<path fill="none" stroke="${C.ink}" stroke-width="${a}" d="M${a / 2} 0V${100 - a / 2}H100"/></g>`;
   },
 };
 
@@ -129,30 +134,32 @@ const concepts = {
  */
 const LEAF_HALF = [[-1860, 65], [-1790, -685], [-1258, -570], [-1080, -855], [-700, -401], [-620, -1510], [-400, -1250], [0, -2000]];
 const LEAF = [...LEAF_HALF, ...LEAF_HALF.slice(0, -1).reverse().map(([x, y]) => [-x, y])];
-/** The leaf cut to |x| <= crop and scaled to the 100 box with its top point at `top`, filled down to y 100. */
-function leafArea(crop, top) {
+/** Axis line width, in the mark's 100 units: 1.2 px in the 20 px top bar, 1 px in a 16 px tab. */
+const AXIS = 6;
+/** The leaf cut to x0..x1, scaled across the 100 box with its top point at `top`, filled down to y 100. */
+function leafArea(x0, x1, top) {
   const pts = [];
   LEAF.forEach(([x, y], i) => {
     const prev = LEAF[i - 1];
-    if (prev) for (const edge of [-crop, crop]) if ((prev[0] - edge) * (x - edge) < 0)
+    if (prev) for (const edge of [x0, x1]) if ((prev[0] - edge) * (x - edge) < 0)
       pts.push([edge, prev[1] + (y - prev[1]) * (edge - prev[0]) / (x - prev[0])]);
-    if (Math.abs(x) <= crop) pts.push([x, y]);
+    if (x >= x0 && x <= x1) pts.push([x, y]);
   });
-  const k = 100 / (2 * crop);
-  const xy = pts.map(([x, y]) => `${r2((x + crop) * k, 1)} ${r2(top + (y + 2000) * k, 1)}`);
+  const k = 100 / (x1 - x0);
+  const xy = pts.map(([x, y]) => `${r2((x - x0) * k, 1)} ${r2(top + (y + 2000) * k, 1)}`);
   return `M0 100L${xy.join("L")}L100 100Z`;
 }
 
-// f: the leaf says Canada, the area chart says statistics. Square, like everything else on the site.
+// f: the leaf says Canada, the area chart says statistics. Square, like everything else on the site; the favicon alone
+// gets a 6/100 corner radius.
 const CHOSEN = "f";
 // Tile marks fill a full-bleed background with ink (app icons and avatars are cropped by the platform).
-const TILE = new Set(["d", "e", "f"]);
+const TILE = new Set(["d", "e"]);
 
 /** A mark as a complete SVG. `inset` is the padding on each side as a fraction of the size. */
-function markSvg(concept, { small = false, bg = C.paper, inset = 0, dark = false, size = 100 } = {}) {
+function markSvg(concept, { small = false, bg = C.paper, inset = 0, dark = false, size = 100, rx = 0 } = {}) {
   const k = 1 - 2 * inset;
-  const body = concept === "f" ? concepts.f(small, inset)
-    : `<g transform="translate(${r2(inset * 100)} ${r2(inset * 100)}) scale(${r2(k, 4)})">${concepts[concept](small)}</g>`;
+  const body = `<g transform="translate(${r2(inset * 100)} ${r2(inset * 100)}) scale(${r2(k, 4)})">${concepts[concept](small, rx)}</g>`;
   const fill = bg && TILE.has(concept) ? C.ink : bg;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">${style(dark)}${fill ? `<rect width="100" height="100" fill="${fill}"/>` : ""}${body}</svg>`;
 }
@@ -168,13 +175,13 @@ for (const k of Object.keys(concepts)) {
 }
 
 // ---------- Site icons ----------
-// favicon.svg is shown at 16-32 px: the small drawing, transparent, light/dark aware.
-writeFileSync(join(SITE, "favicon.svg"), markSvg(CHOSEN, { small: true, bg: null, dark: true, size: 32 }));
+// favicon.svg is shown at 16-32 px: a white tile with slightly rounded corners, the same on light and dark tab bars.
+writeFileSync(join(SITE, "favicon.svg"), markSvg(CHOSEN, { small: true, bg: null, size: 32, rx: 6 }));
 const tmp = mkdtempSync(join(tmpdir(), "statcan2-ico-"));
 const icoParts = [16, 32, 48].map((s) => {
   const f = join(tmp, `${s}.png`);
-  // 48 is still small enough for the heavy drawing; white so it reads on dark tab bars too.
-  writeFileSync(f, png(markSvg(CHOSEN, { small: true, bg: null }), s));
+  // The same rounded white tile at 16, 32 and 48.
+  writeFileSync(f, png(markSvg(CHOSEN, { small: true, bg: null, rx: 6 }), s));
   return f;
 });
 execFileSync("magick", [...icoParts, join(SITE, "favicon.ico")]);
@@ -220,7 +227,7 @@ const wmTop = Math.min(word.y, ver.y), wmBottom = Math.max(word.y + word.h, ver.
 }
 
 // ---------- Social ----------
-// Profile: the mark sits inside the inscribed circle (corners of the parentheses stay > 8 % from the circle).
+// Profile: the inset drops the leaf's top point well inside the circle crop.
 writeFileSync(join(SOCIAL, "profile-1000.png"), png(markSvg(CHOSEN, { inset: 0.2 }), 1000));
 writeFileSync(join(SOCIAL, "profile-400.png"), png(markSvg(CHOSEN, { inset: 0.2 }), 400));
 
@@ -295,4 +302,4 @@ writeFileSync(join(SOCIAL, "header-linkedin-1584x396.png"), png(liHeader, 1584))
   writeFileSync(join(CONCEPTS, "contact-sheet.png"), png(`<svg xmlns="http://www.w3.org/2000/svg" width="860" height="${y}" viewBox="0 0 860 ${y}"><rect width="860" height="${y}" fill="#fff"/>${style(false)}${out}</svg>`, 860));
 }
 // The site top bar draws the small mark inline (api/src/pages.ts logo()); this is its path.
-console.log(`built brand assets\ntop bar leaf: ${leafArea(1400, 14)}`);
+console.log(`built brand assets\ntop bar mark: ${concepts.f(true)}`);
