@@ -5,6 +5,7 @@ import * as render from "../public/render.js";
 // @ts-expect-error Browser-owned pure-JS layout has no TypeScript declaration; fields are typed below.
 import * as exportLayout from "../public/export-layout.js";
 import type { Db } from "./db.ts";
+import { BRAND_MARK } from "./pages.ts";
 import { decodeSpec, type ViewResult, type ViewSeries } from "./spec.ts";
 import { runView } from "./view.ts";
 
@@ -18,6 +19,7 @@ const { esc, seriesShades, methodLines, ownPoints, isHorizontal } = render as un
 const sans = fileURLToPath(new URL("../node_modules/geist/dist/fonts/geist-sans/Geist-SemiBold.ttf", import.meta.url));
 const regular = fileURLToPath(new URL("../node_modules/geist/dist/fonts/geist-sans/Geist-Regular.ttf", import.meta.url));
 const mono = fileURLToPath(new URL("../node_modules/geist/dist/fonts/geist-mono/GeistMono-Regular.ttf", import.meta.url));
+const monoMedium = fileURLToPath(new URL("../node_modules/geist/dist/fonts/geist-mono/GeistMono-Medium.ttf", import.meta.url));
 type Layout = {
   width: number; height: number; margin: number; scale: number;
   title: { y: number; size: number; minSize: number };
@@ -347,11 +349,15 @@ export function chartSvg(view: ViewResult) {
   </svg>`;
 }
 
-// The site card: title, one line on what the site is, and a sample line drawn like an export's series line.
+// The site card: the top bar's mark and wordmark at 72 px, one line on what the site is, and a sample line
+// drawn like an export's series line. Sizes and spacing scale the top bar's CSS (19 px wordmark) by 72/19.
 function siteSvg() {
+  const size = 72, k = size / 19, baseline = 128;
+  const mark = 20 * k, markY = baseline - .31 * size - mark / 2;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
     <rect width="1200" height="630" fill="${paper}"/>
-    <text x="64" y="128" font-family="${FONTS.sans}" font-size="72" font-weight="600" fill="${ink}">${text(PUBLIC_HOST)}</text>
+    <svg x="64" y="${markY.toFixed(1)}" width="${mark.toFixed(1)}" height="${mark.toFixed(1)}" viewBox="0 0 100 100">${BRAND_MARK}</svg>
+    <text x="${(64 + mark + 8 * k).toFixed(1)}" y="${baseline}" font-family="${FONTS.sans}" font-size="${size}" font-weight="600" letter-spacing="${(-.03 * size).toFixed(2)}" fill="${ink}">statcan<tspan dx="${(2 * k).toFixed(1)}" font-family="${FONTS.mono}" font-size="${(15 * k).toFixed(1)}" font-weight="500" letter-spacing="${(-.05 * 15 * k).toFixed(2)}" fill="${palette[0]}">(2)</tspan></text>
     <text x="64" y="186" font-family="${FONTS.sans}" font-size="28" fill="${muted}">Explore and chart published Statistics Canada data.</text>
     <path d="${SITE_LINE}" fill="none" stroke="${palette[0]}" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
   </svg>`;
@@ -372,7 +378,7 @@ function textSvg(title: string, description: string) {
 }
 
 function png(svg: string) {
-  return new Resvg(svg, { fitTo: { mode: "original" }, font: { fontFiles: [regular, sans, mono], loadSystemFonts: false,
+  return new Resvg(svg, { fitTo: { mode: "original" }, font: { fontFiles: [regular, sans, mono, monoMedium], loadSystemFonts: false,
     defaultFontFamily: "Geist" } }).render().asPng();
 }
 

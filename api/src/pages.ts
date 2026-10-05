@@ -17,9 +17,12 @@ const HIGHCHARTS = { src: "https://cdn.jsdelivr.net/npm/highcharts@13.1.1/highch
 const PUBLIC_DIR = fileURLToPath(new URL("../public", import.meta.url));
 
 
+/** The favicon's mark (brand/build.mjs concept f, the maple leaf as an area chart) on a 100×100 viewBox. */
+export const BRAND_MARK = `<rect width="100" height="100" fill="#0E0F11"/><path d="M0 100L0 64L5.1 65.1L11.4 54.9L25 71.1L27.9 31.5L35.7 40.8L50 14L64.3 40.8L72.1 31.5L75 71.1L88.6 54.9L94.9 65.1L100 64L100 100Z" fill="#D80621"/>`;
+
 function logo() {
-  // The favicon's mark (brand/build.mjs concept e, small drawing), then the wordmark.
-  return html`<a class="brand" data-pp="pp_mury6rk1a84x" href="/" aria-label="statcan(2) home"><svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="18" fill="#0E0F11"/><path d="M18 72L40 52L56 60L74 32" fill="none" stroke="#fff" stroke-width="11" stroke-linejoin="round" stroke-linecap="round"/><circle cx="74" cy="32" r="11" fill="#D80621"/></svg><span class="brand-word">statcan<span class="brand-version">(2)</span></span></a>`;
+  // The mark, then the wordmark.
+  return html`<a class="brand" data-pp="pp_mury6rk1a84x" href="/" aria-label="statcan(2) home"><svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true">${raw(BRAND_MARK)}</svg><span class="brand-word">statcan<span class="brand-version">(2)</span></span></a>`;
 }
 
 /** The last top bar item, on every page: an outline button to the project's Buy Me a Coffee page, in a new tab. */

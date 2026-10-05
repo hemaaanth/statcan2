@@ -115,17 +115,44 @@ const concepts = {
       + `<path class="sw" stroke-width="${small ? 11 : 7}" stroke-linejoin="round" stroke-linecap="round" d="M${pts.map((p) => p.join(" ")).join("L")}"/>`
       + `<circle class="a" cx="${ex}" cy="${ey}" r="${small ? 11 : 9}"/>`;
   },
+  // f. The maple leaf as an area chart: the leaf's top edge is the line, filled red to the bottom of a square ink tile.
+  // An area chart runs to the edges, so padding (`inset`) only moves the top point down; the fill stays full-bleed.
+  f(small, inset = 0) {
+    return `<rect class="ti" width="100" height="100"/><path class="a" d="${leafArea(1400, 14 + inset * 70)}"/>`;
+  },
 };
 
-// e: the mark is about the data, not the "(2)", so the "(2)" can stay a suffix shared by other projects.
-const CHOSEN = "e";
+/**
+ * The top edge of the Flag of Canada leaf (its vertices, arcs dropped), half from the left lobe to the top point,
+ * in flag units: x -1860..1860, y -2000 (top) down. Each lobe's tip moves just right of its notch, so x only ever
+ * increases: a line chart, not a drawing.
+ */
+const LEAF_HALF = [[-1860, 65], [-1790, -685], [-1258, -570], [-1080, -855], [-700, -401], [-620, -1510], [-400, -1250], [0, -2000]];
+const LEAF = [...LEAF_HALF, ...LEAF_HALF.slice(0, -1).reverse().map(([x, y]) => [-x, y])];
+/** The leaf cut to |x| <= crop and scaled to the 100 box with its top point at `top`, filled down to y 100. */
+function leafArea(crop, top) {
+  const pts = [];
+  LEAF.forEach(([x, y], i) => {
+    const prev = LEAF[i - 1];
+    if (prev) for (const edge of [-crop, crop]) if ((prev[0] - edge) * (x - edge) < 0)
+      pts.push([edge, prev[1] + (y - prev[1]) * (edge - prev[0]) / (x - prev[0])]);
+    if (Math.abs(x) <= crop) pts.push([x, y]);
+  });
+  const k = 100 / (2 * crop);
+  const xy = pts.map(([x, y]) => `${r2((x + crop) * k, 1)} ${r2(top + (y + 2000) * k, 1)}`);
+  return `M0 100L${xy.join("L")}L100 100Z`;
+}
+
+// f: the leaf says Canada, the area chart says statistics. Square, like everything else on the site.
+const CHOSEN = "f";
 // Tile marks fill a full-bleed background with ink (app icons and avatars are cropped by the platform).
-const TILE = new Set(["d", "e"]);
+const TILE = new Set(["d", "e", "f"]);
 
 /** A mark as a complete SVG. `inset` is the padding on each side as a fraction of the size. */
 function markSvg(concept, { small = false, bg = C.paper, inset = 0, dark = false, size = 100 } = {}) {
   const k = 1 - 2 * inset;
-  const body = `<g transform="translate(${r2(inset * 100)} ${r2(inset * 100)}) scale(${r2(k, 4)})">${concepts[concept](small)}</g>`;
+  const body = concept === "f" ? concepts.f(small, inset)
+    : `<g transform="translate(${r2(inset * 100)} ${r2(inset * 100)}) scale(${r2(k, 4)})">${concepts[concept](small)}</g>`;
   const fill = bg && TILE.has(concept) ? C.ink : bg;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">${style(dark)}${fill ? `<rect width="100" height="100" fill="${fill}"/>` : ""}${body}</svg>`;
 }
@@ -267,4 +294,5 @@ writeFileSync(join(SOCIAL, "header-linkedin-1584x396.png"), png(liHeader, 1584))
   y += 230;
   writeFileSync(join(CONCEPTS, "contact-sheet.png"), png(`<svg xmlns="http://www.w3.org/2000/svg" width="860" height="${y}" viewBox="0 0 860 ${y}"><rect width="860" height="${y}" fill="#fff"/>${style(false)}${out}</svg>`, 860));
 }
-console.log("built brand assets");
+// The site top bar draws the small mark inline (api/src/pages.ts logo()); this is its path.
+console.log(`built brand assets\ntop bar leaf: ${leafArea(1400, 14)}`);
