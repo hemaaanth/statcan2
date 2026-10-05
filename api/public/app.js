@@ -214,6 +214,9 @@ function placePopover() {
     panel.style.removeProperty("--pop-w");
     panel.style.setProperty("--pop-w", `${panel.getBoundingClientRect().width}px`);
   }
+  // The × sits just left of the body's scrollbar (0 when it has none, or when scrollbars overlay).
+  const body = panel.querySelector(".panel-body");
+  panel.style.setProperty("--sb", `${body.offsetWidth - body.clientWidth}px`);
   const p = panel.getBoundingClientRect();
   panel.style.setProperty("--caret-x", `${Math.min(Math.max(b.left + b.width / 2 - p.left, 14), p.width - 14)}px`);
 }
@@ -279,22 +282,11 @@ addEventListener("hashchange", openFromHash);
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-copy]");
   if (!b) return;
-  const label = b.textContent;
-  try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; }
-  catch { b.textContent = "Copy failed"; }
-  setTimeout(() => { b.textContent = label; }, 1600);
+  try { await navigator.clipboard.writeText(b.dataset.copy); flashLabel(b, "Copied"); }
+  catch { flashLabel(b, "Failed"); }
 });
 
 // ---------------------------------------------------------------- Screenshot (PNG) and Share (link)
-
-let statusTimer;
-/** A short line above the rail's right end ("Link copied"); gone after 2 s. */
-function notice(text) {
-  const el = $("act-status");
-  el.textContent = text;
-  clearTimeout(statusTimer);
-  statusTimer = setTimeout(() => { el.textContent = ""; }, 2000);
-}
 
 /** "Gas vs Food by province, % change over 1 year" → "gas-vs-food-by-province-change-over-1-year.png". */
 const pngName = (title) => `${(title.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "chart")}.png`;
@@ -310,6 +302,7 @@ function stableLabel(btn, states) {
   const idle = label.textContent.trim();
   const stack = document.createElement("span");
   stack.className = "act-label";
+  stack.setAttribute("aria-live", "polite"); // the flashed word is announced, as the old status line was
   stack.innerHTML = [idle, ...states].map((w, i) => `<span${i ? ` hidden` : ""}>${w}</span>`).join("");
   label.replaceWith(stack);
 }
@@ -318,7 +311,8 @@ function flashLabel(btn, text) {
   if (!words.length) return;
   clearTimeout(btn.flashTimer);
   for (const w of words) w.hidden = w.textContent !== text;
-  btn.flashTimer = setTimeout(() => { words.forEach((w, i) => { w.hidden = i > 0; }); }, 1500);
+  btn.classList.add("flashing"); // phones show the word only while it flashes (their actions are icons)
+  btn.flashTimer = setTimeout(() => { words.forEach((w, i) => { w.hidden = i > 0; }); btn.classList.remove("flashing"); }, 1500);
 }
 
 /** Download the PNG (the fallback when the clipboard cannot take an image). */
@@ -352,8 +346,7 @@ pngBtn.addEventListener("click", async () => {
     }
     if (!copied) savePng(await png, view.title);
     flashLabel(pngBtn, copied ? "Copied" : "Saved");
-    notice(copied ? "Chart copied" : "PNG saved");
-  } catch (err) { flashLabel(pngBtn, "Failed"); notice(`Screenshot failed: ${err.message}`); }
+  } catch (err) { flashLabel(pngBtn, "Failed"); console.error("Screenshot failed", err); }
   finally { pngBtn.disabled = false; }
 });
 
@@ -372,8 +365,8 @@ shareBtn.addEventListener("click", async () => {
     try { await navigator.share({ title: state.view?.title ?? document.title, url: link }); return; }
     catch (err) { if (err.name === "AbortError") return; } // closed the sheet; fall back to copying otherwise
   }
-  try { await navigator.clipboard.writeText(link); flashLabel(shareBtn, "Copied"); notice("Link copied"); }
-  catch { flashLabel(shareBtn, "Failed"); notice("Could not copy the link"); }
+  try { await navigator.clipboard.writeText(link); flashLabel(shareBtn, "Copied"); }
+  catch { flashLabel(shareBtn, "Failed"); }
 });
 
 // Highcharts follows the plot area.

@@ -100,7 +100,7 @@ function appPage(state: AppState, meta: PageMeta) {
     <div class="stage"><div id="chart" class="chart-box"></div><div id="blank" class="blank" ${p.blank ? "" : "hidden"} aria-live="polite">${raw(p.blank)}</div></div>
     <nav id="rail" class="rail" aria-label="Chart details">${TABS.map(([k, l]) => html`<a href="#p-${k}" data-tab="${k}" role="button" aria-expanded="false" aria-controls="p-${k}">${l}<span class="count">${count(k)}</span></a>`)}
       <span class="rail-acts"><button type="button" class="act" id="act-png" title="Download a PNG of this chart"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h2.5l1-1.5h5l1 1.5H14v8H2z"/><circle cx="8" cy="8.75" r="2.25"/></svg>Screenshot</button><button type="button" class="act primary" id="act-share" title="Copy a link to this exact chart"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8M5 5l3-3 3 3M3 9v5h10V9"/></svg>Share</button></span>
-      <span class="rail-note">Independent. Not affiliated with Statistics Canada.</span><span id="act-status" class="act-status" role="status" aria-live="polite"></span></nav>
+      <span class="rail-note">Independent. Not affiliated with Statistics Canada.</span></nav>
     </div>
     <div class="panels">${TABS.map(([k, l]) => html`<section id="p-${k}" class="panel pop-${k}" role="dialog" aria-label="${l}" tabindex="-1"><h2 class="panel-title">${l}</h2><a class="panel-close" href="#" data-close aria-label="Close ${l}">×</a><div class="panel-body">${raw(p[k])}</div></section>`)}</div>
   </div>

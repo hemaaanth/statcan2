@@ -430,27 +430,30 @@ export function tableHtml(view) {
     const index = view.series.map((s) => new Map(s.points.map((p) => [p[1], p])));
     rows = starts.slice(0, TABLE_ROWS).map((st) => `<tr><th>${esc(periodLabel(byStart.get(st), st, grain))}</th>${view.series.map((s, i) => cell(s, index[i].get(st))).join("")}</tr>`);
   }
-  const more = total > TABLE_ROWS ? `<p class="quiet mono">Showing the latest ${TABLE_ROWS} of ${total.toLocaleString("en-CA")} rows. Download has every row.</p>` : "";
+  const more = total > TABLE_ROWS ? `<p class="table-more">Showing the latest ${TABLE_ROWS} of ${total.toLocaleString("en-CA")} rows. Download has every row.</p>` : "";
   return `<div class="data-wrap"><table class="data-table"><thead>${head}</thead><tbody>${rows.join("")}</tbody></table></div>${more}`;
 }
 
 const SCOPE_RANK = { table: 0, dimension: 1, member: 2 };
 /**
  * Groups first (how each group's values were made: method, members, formula), then the published notes grouped by
- * source table. The group block is ours, not Statistics Canada's, so it sits above "As published".
+ * source table. The group block is ours, not Statistics Canada's, so it sits above the published notes.
  */
 export function groupNotesHtml(view) {
   const gs = view.group_notes ?? [];
   if (!gs.length) return "";
   const table = (pid) => view.sources.find((s) => s.pid === pid)?.table_number ?? pid;
   const many = new Set(gs.map((g) => g.pid)).size > 1;
-  return `<section class="note-group group-notes"><div class="section-head"><h2>Groups</h2><span class="count">${gs.length}</span></div>
-    <ul class="group-list">${gs.map((g) => `<li><div class="g-line"><b>${esc(g.label)}</b><span class="m-tag m-${esc(g.method)}">${esc(METHOD_WORD[g.method] ?? g.method)}</span>${many ? `<span class="quiet mono">${esc(table(g.pid))}</span>` : ""}</div>
+  return `<section class="note-group group-notes">${noteHead("Groups")}
+    <ul class="group-list">${gs.map((g) => `<li><div class="g-line"><b>${esc(g.label)}</b><span class="m-tag m-${esc(g.method)}">${esc(METHOD_WORD[g.method] ?? g.method)}</span>${many ? `<span class="quiet">${esc(table(g.pid))}</span>` : ""}</div>
       ${g.formula ? `<div class="g-formula">${esc(g.formula)}</div>` : ""}<div class="g-members">${esc(g.members.join(", "))}</div></li>`).join("")}</ul></section>`;
 }
 
+/** A notes block's head: a name (a table number, "Groups") and an optional title, on one line. */
+const noteHead = (name, title) => `<div class="note-head"><h2>${esc(name)}</h2>${title ? `<span title="${esc(title)}">${esc(title)}</span>` : ""}</div>`;
+
 /** How the view's values were calculated (ours, not Statistics Canada's): today the index base, from `index_note`. */
-const calcHtml = (view) => view.index_note ? `<section class="note-group calc-notes"><div class="section-head"><h2>Calculation</h2></div><p class="g-formula">${esc(view.index_note)}</p></section>` : "";
+const calcHtml = (view) => view.index_note ? `<section class="note-group calc-notes">${noteHead("Calculation")}<p class="g-formula">${esc(view.index_note)}</p></section>` : "";
 
 export function notesHtml(view) {
   const groups = calcHtml(view) + groupNotesHtml(view);
@@ -458,30 +461,41 @@ export function notesHtml(view) {
   return groups + view.sources.map((src) => {
     const notes = view.notes.filter((n) => n.pid === src.pid).sort((a, b) => SCOPE_RANK[a.scope.kind] - SCOPE_RANK[b.scope.kind] || a.note_id - b.note_id);
     if (!notes.length) return "";
-    return `<section class="note-group"><div class="section-head"><h2>${esc(src.table_number)}</h2><span class="count">${notes.length}</span><span class="quiet mono">${esc(src.title)}</span></div>
+    return `<section class="note-group">${noteHead(src.table_number, src.title)}
       <div class="note-cols">${notes.map((n) => `<div class="note-row"><span class="id">${n.note_id}</span><div>${n.scope.kind === "table" ? "" : `<span class="note-tag">${esc(n.scope.kind === "member" ? `${n.scope.dimension} · ${n.scope.member}` : n.scope.dimension)}</span>`}<div class="note-text">${sanitizeNote(n.text)}</div></div></div>`).join("")}</div></section>`;
-  }).join("") + `<p class="quiet mono">As published by Statistics Canada</p>`;
+  }).join("");
 }
 
 /** Statistics Canada's own full-table ZIP (CSV) for a PID. Every captured source ZIP came from this URL. */
 export const statcanZipUrl = (pid) => `https://www150.statcan.gc.ca/n1/tbl/csv/${pid}-eng.zip`;
 
 const DOWN = `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1v8M2.5 5.5 6 9l3.5-3.5M1 11h10"/></svg>`;
+/**
+ * Two kinds of file, each under a small label: the chart's own data ("This view"), then each source table in full. Every
+ * row is one grid (name and sub line, then two equal button slots), so the buttons line up across rows.
+ */
 export function downloadHtml(view) {
-  const row = (title, sub, links) => `<div class="download-row"><div><b>${title}</b><div class="muted mono">${sub}</div></div><div class="dl-links">${links}</div></div>`;
-  const btn = (href, label, primary) => `<a class="btn${primary ? " primary" : ""}" href="${esc(href)}" download>${DOWN}${label}</a>`;
+  const btn = (href, label, tip, primary) => `<a class="btn${primary ? " primary" : ""}" href="${esc(href)}" title="${esc(tip)}" download>${DOWN}${label}</a>`;
+  const row = (name, sub, a, b) => `<div class="dl-row"><div class="dl-what"><b>${esc(name)}</b><span title="${esc(sub)}">${esc(sub)}</span></div>${a}${b}</div>`;
   const links = viewLinks(view);
-  return row("This view", `${view.series.length} series · exactly what the chart shows · spec and citations in the Parquet metadata`,
-    btn(links.parquet, "Parquet", true) + btn(links.csv, "CSV")) +
-    view.sources.map((s) => row(`${esc(s.table_number)} <span class="muted">${esc(s.title)}</span>`, "Full table",
-      btn(`/api/v1/tables/${s.pid}/observations.parquet`, "Parquet") + btn(statcanZipUrl(s.pid), "Source ZIP at StatCan"))).join("");
+  return `<div class="dl-kind">Chart data</div>` +
+    row("This view", `${view.series.length} series, as charted`,
+      btn(links.parquet, "Parquet", "The chart's data, with its spec and citations in the file metadata", true), btn(links.csv, "CSV", "The chart's data")) +
+    `<div class="dl-kind">Full tables</div>` +
+    view.sources.map((s) => row(s.table_number, s.title,
+      btn(`/api/v1/tables/${s.pid}/observations.parquet`, "Parquet", "Every observation in the table"),
+      btn(statcanZipUrl(s.pid), "Source ZIP", "Statistics Canada's original ZIP (CSV)"))).join("");
 }
+
+/** A Copy button that never changes size: every word it can show shares one grid cell (app.js flips the visible one). */
+const copyBtn = (text, label = "Copy") =>
+  `<button type="button" class="btn" data-copy="${esc(text)}"><span class="act-label" aria-live="polite"><span>${label}</span><span hidden>Copied</span><span hidden>Failed</span></span></button>`;
 
 export function citeHtml(view) {
   const all = view.sources.map((s) => s.citation).join("\n");
-  return `${view.sources.length > 1 ? `<div class="cite-all"><button type="button" class="btn" data-copy="${esc(all)}">Copy all</button></div>` : ""}<ol class="cite-list">${view.sources.map((s) => `<li class="cite-row"><div><p>${esc(s.citation)}</p>
+  return `${view.sources.length > 1 ? `<div class="cite-all"><span class="dl-kind">${view.sources.length} tables</span>${copyBtn(all, "Copy all")}</div>` : ""}<ol class="cite-list">${view.sources.map((s) => `<li class="cite-row"><div><p>${esc(s.citation)}</p>
     <div class="hash">${s.captured ? `captured ${esc(periodLabel(s.captured, s.captured, "day"))} · ` : ""}build ${esc(view.build_id)} · normalized ${esc(view.normalized_build_id)} · <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.url)}</a></div></div>
-    <button type="button" class="btn" data-copy="${esc(s.citation)}">Copy</button></li>`).join("")}</ol>`;
+    ${copyBtn(s.citation)}</li>`).join("")}</ol>`;
 }
 
 export function apiHtml(view) {
@@ -492,7 +506,7 @@ export function apiHtml(view) {
   const json = JSON.stringify(spec);
   const curl = `curl -s -X POST ${PUBLIC_ORIGIN}/api/v1/view -H 'content-type: application/json' -d '${json.replaceAll("'", "'\\''")}'`;
   const mcp = JSON.stringify({ tool: "run_view", arguments: { spec } }, null, 2);
-  const block = (title, text, link) => `<div class="api-block"><div class="api-head"><b>${title}</b>${link ? `<a class="muted mono" href="${esc(link)}" target="_blank" rel="noopener">open ↗</a>` : ""}<button type="button" class="btn" data-copy="${esc(text)}">Copy</button></div><pre>${esc(text)}</pre></div>`;
+  const block = (title, text, link) => `<div class="api-block"><div class="api-head"><b>${title}</b>${link ? `<a class="muted" href="${esc(link)}" target="_blank" rel="noopener">Open ↗</a>` : ""}${copyBtn(text)}</div><pre>${esc(text)}</pre></div>`;
   return block("POST /api/v1/view", curl) + block("GET /api/v1/view?s=", published, `${self.pathname}${self.search}`) + block("MCP run_view", mcp) +
-    `<p class="quiet mono"><a href="/api">API reference →</a></p>`;
+    `<p class="api-more"><a href="/api">API reference →</a></p>`;
 }
