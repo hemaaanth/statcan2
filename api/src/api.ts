@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { Hono, type Context } from "hono";
 import { Db, MAX_DIMS, MAX_LIMIT, MAX_SERIES, type SeriesDetailResult } from "./db.ts";
 import { openapi } from "./openapi.ts";
+import { statcanZipUrl } from "../public/render.js";
 
 export interface Config {
   db: Db;
@@ -120,7 +121,7 @@ export function apiRoutes({ db, captureDir }: Config) {
       links.observations = `/api/v1/tables/${pid}/observations`;
       links.parquet = `/api/v1/tables/${pid}/observations.parquet`;
     }
-    if (db.sourceZipPath(pid, captureDir)) links.source_zip = `/api/v1/tables/${pid}/source.zip`;
+    links.source_zip = `/api/v1/tables/${pid}/source.zip`;
     return c.json({ ...provenance, ...table, links });
   });
 
@@ -163,7 +164,8 @@ export function apiRoutes({ db, captureDir }: Config) {
   api.get("/tables/:pid/source.zip", (c) => {
     const pid = c.req.param("pid");
     const zip = db.sourceZipPath(pid, captureDir);
-    if (!zip) return c.json({ error: "source ZIP not captured" }, 404);
+    // Without the capture, send the client to the same file at Statistics Canada. It may be newer than this build's source_sha256.
+    if (!zip) return db.info.has(pid) ? c.redirect(statcanZipUrl(pid), 302) : c.json({ error: "unknown PID", ...provenance }, 404);
     const hash = m.tables[pid].source_sha256;
     return file(zip, `${pid}-eng.zip`, "application/zip", hash ? { "X-Content-SHA256": hash } : {});
   });

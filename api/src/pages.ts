@@ -74,7 +74,7 @@ function layout(title: string, meta: PageMeta, body: HtmlEscapedString | Promise
 
 
 /** What the app screen needs; embedded as JSON so app.js starts from the server's answer. */
-type AppState = { q: string; plan: PlanResult | null; spec: ViewSpec | null; view: ViewResult | null; edited: boolean; error: string | null; hasZip: boolean };
+type AppState = { q: string; plan: PlanResult | null; spec: ViewSpec | null; view: ViewResult | null; edited: boolean; error: string | null };
 const TABS = [["table", "Table"], ["notes", "Notes"], ["download", "Download"], ["cite", "Cite"], ["api", "API"]] as const;
 
 /** The one app screen: question box, chart header band, plot, panel tabs, and the (collapsed) chart builder. */
@@ -111,9 +111,8 @@ function appPage(state: AppState, meta: PageMeta) {
 }
 
 
-export function pageRoutes({ db, captureDir }: Config) {
+export function pageRoutes({ db }: Config) {
   const site = new Hono();
-  const hasZip = captureDir !== undefined;
   // no-cache = revalidate every load (304 via Last-Modified), so an edited module is never served stale; the files are a few KB.
   site.use("/static/*", serveStatic({ root: PUBLIC_DIR, rewriteRequestPath: (p) => p.slice("/static".length), onFound: (_path, c) => { c.header("Cache-Control", "no-cache"); } }));
   type Endpoint = { method: string; path: string; description: string; params?: string };
@@ -146,7 +145,7 @@ export function pageRoutes({ db, captureDir }: Config) {
     ]],
     ["Files", [
       { method: "GET", path: "/api/v1/tables/{pid}/observations.parquet", description: "Whole-table Parquet for the current build." },
-      { method: "GET", path: "/api/v1/tables/{pid}/source.zip", description: "Original Statistics Canada ZIP when captured." },
+      { method: "GET", path: "/api/v1/tables/{pid}/source.zip", description: "Original Statistics Canada ZIP: the captured copy, or a redirect to Statistics Canada." },
     ]],
     ["Build", [
       { method: "GET", path: "/api/v1/build", description: "Build, capture, manifest and code-set provenance." },
@@ -220,7 +219,7 @@ export function pageRoutes({ db, captureDir }: Config) {
     const q = c.req.query("q") ?? "";
     const s = c.req.query("s");
     const origin = publicOrigin();
-    const state: AppState = { q, plan: null, spec: null, view: null, edited: false, error: null, hasZip };
+    const state: AppState = { q, plan: null, spec: null, view: null, edited: false, error: null };
     if (s) {
       // `s` names the exact chart: run it as is, never re-plan. `q` only refills the box.
       state.edited = true;

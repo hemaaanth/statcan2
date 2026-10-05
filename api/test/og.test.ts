@@ -146,7 +146,7 @@ test("annual and census period labels use years while Cite retains its capture d
   assert.match(chartSvg(view), />statcan2\.ca · 2021<\/text>/);
   assert.match(view.subtitle, /(?:^| · )2021(?: · |$)/);
   assert.doesNotMatch(view.subtitle, /\bJan 2021\b/);
-  const rendered = parts({ q: "", plan: null, spec, view, error: null, hasZip: false });
+  const rendered = parts({ q: "", plan: null, spec, view, error: null });
   assert.match(rendered.head, /<div class="sub">[^<]*2021/);
   assert.doesNotMatch(rendered.head, /\bJan 2021\b/);
   assert.match(rendered.cite, /captured \d{1,2} [A-Z][a-z]{2} \d{4}/);

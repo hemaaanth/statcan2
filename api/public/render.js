@@ -350,7 +350,7 @@ export function indexBaseLabel(b) {
 }
 
 /**
- * state: { q, plan, spec, view, error, hasZip }. Returns HTML strings for each region of the app screen.
+ * state: { q, plan, spec, view, error }. Returns HTML strings for each region of the app screen.
  * `blank` is non-empty when the chart area shows a message instead of a chart.
  */
 export function parts(state) {
@@ -389,7 +389,7 @@ export function parts(state) {
   if (out.blank) out.blank = `<p class="blank-msg small">${esc(out.blank)}</p>`;
   out.table = tableHtml(view);
   out.notes = notesHtml(view);
-  out.download = downloadHtml(view, state.hasZip);
+  out.download = downloadHtml(view);
   out.cite = citeHtml(view);
   out.api = apiHtml(view);
   out.counts = { notes: view.notes.length + (view.group_notes?.length ?? 0) + (view.index_note ? 1 : 0), cite: view.sources.length };
@@ -463,15 +463,18 @@ export function notesHtml(view) {
   }).join("") + `<p class="quiet mono">As published by Statistics Canada</p>`;
 }
 
+/** Statistics Canada's own full-table ZIP (CSV) for a PID. Every captured source ZIP came from this URL. */
+export const statcanZipUrl = (pid) => `https://www150.statcan.gc.ca/n1/tbl/csv/${pid}-eng.zip`;
+
 const DOWN = `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1v8M2.5 5.5 6 9l3.5-3.5M1 11h10"/></svg>`;
-export function downloadHtml(view, hasZip) {
+export function downloadHtml(view) {
   const row = (title, sub, links) => `<div class="download-row"><div><b>${title}</b><div class="muted mono">${sub}</div></div><div class="dl-links">${links}</div></div>`;
   const btn = (href, label, primary) => `<a class="btn${primary ? " primary" : ""}" href="${esc(href)}" download>${DOWN}${label}</a>`;
   const links = viewLinks(view);
   return row("This view", `${view.series.length} series · exactly what the chart shows · spec and citations in the Parquet metadata`,
     btn(links.parquet, "Parquet", true) + btn(links.csv, "CSV")) +
     view.sources.map((s) => row(`${esc(s.table_number)} <span class="muted">${esc(s.title)}</span>`, "Full table",
-      btn(`/api/v1/tables/${s.pid}/observations.parquet`, "Parquet") + (hasZip ? btn(`/api/v1/tables/${s.pid}/source.zip`, "Source ZIP (CSV)") : ""))).join("");
+      btn(`/api/v1/tables/${s.pid}/observations.parquet`, "Parquet") + btn(statcanZipUrl(s.pid), "Source ZIP at StatCan"))).join("");
 }
 
 export function citeHtml(view) {

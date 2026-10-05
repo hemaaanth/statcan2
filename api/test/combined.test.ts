@@ -42,6 +42,13 @@ test("combined build serves both Clean inputs' observations and sources", option
     assert.equal(createHash("sha256").update(bytes).digest("hex"), db.manifest.tables[pid].source_sha256);
     assert.equal(zip.headers.get("x-content-sha256"), db.manifest.tables[pid].source_sha256);
   }
+  // Without the capture (the public server), source.zip sends clients to Statistics Canada.
+  const uncaptured = apiRoutes({ db });
+  const redirect = await uncaptured.request("/tables/98100001/source.zip");
+  assert.equal(redirect.status, 302);
+  assert.equal(redirect.headers.get("location"), "https://www150.statcan.gc.ca/n1/tbl/csv/98100001-eng.zip");
+  assert.equal((await (await uncaptured.request("/tables/98100001")).json()).links.source_zip, "/api/v1/tables/98100001/source.zip");
+  assert.equal((await uncaptured.request("/tables/99999999/source.zip")).status, 404);
   const parquet = await app.request("/tables/98100001/observations.parquet");
   assert.equal(parquet.status, 200);
   assert.equal(parquet.headers.get("x-content-sha256"), db.manifest.tables["98100001"].parquet?.sha256);

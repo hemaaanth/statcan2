@@ -106,7 +106,7 @@ const dataPaths = {
     },
   },
   "/tables/{pid}/observations.parquet": { get: { summary: "Whole-table Parquet for this build", parameters: [pid], responses: { "200": { description: "Parquet file; X-Content-SHA256 header" } } } },
-  "/tables/{pid}/source.zip": { get: { summary: "Unchanged original Statistics Canada ZIP", parameters: [pid], responses: { "200": { description: "ZIP file; X-Content-SHA256 header" }, "404": { description: "Not captured or downloads disabled" } } } },
+  "/tables/{pid}/source.zip": { get: { summary: "Unchanged original Statistics Canada ZIP", parameters: [pid], responses: { "200": { description: "The captured ZIP; X-Content-SHA256 header" }, "302": { description: "Not captured on this server: redirect to the same file at Statistics Canada, which may be newer than source_sha256" }, "404": { description: "Unknown PID" } } } },
   "/series": {
     get: {
       summary: "Search series (Normalized `series`)",

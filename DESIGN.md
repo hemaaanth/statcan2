@@ -178,7 +178,7 @@ In the three blank states there is no head band, no builder button, no rail butt
 
 - **Table**: the data table, built from series × points.
 - **Notes**: `notes[]` from every source table in the view, merged and grouped (see Notes).
-- **Download**: "This view" (Parquet, CSV from `links.parquet` / `links.csv`, exactly what the chart shows), then one row per source table with the full-table Parquet (`/api/v1/tables/{pid}/observations.parquet`) and, when the capture is mounted, the official ZIP with its CSV (`/api/v1/tables/{pid}/source.zip`).
+- **Download**: "This view" (Parquet, CSV from `links.parquet` / `links.csv`, exactly what the chart shows), then one row per source table with the full-table Parquet (`/api/v1/tables/{pid}/observations.parquet`) and "Source ZIP at StatCan", a direct link to Statistics Canada's own ZIP with its CSV (`https://www150.statcan.gc.ca/n1/tbl/csv/{pid}-eng.zip`).
 - **Cite**: every `sources[].citation`, with captured date, build, table URL and Copy.
 - **API**: a curl for `POST /api/v1/view` with the current spec, the `GET /api/v1/view?s=` link, and the MCP `run_view` call with the spec JSON.
 
