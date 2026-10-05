@@ -371,7 +371,7 @@ body[data-status=idle] .blank{inset:16px 24px 0 48px;align-items:stretch}
   /* Blank states: the stage takes the window under the top bar and the rail; the card stays centred. */
   :is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) .stage{height:auto}
   /* Home on phones: the cards go two to a row under the centre card (which spans both), and the page scrolls. */
-  body[data-status=idle]{height:auto;overflow:visible}
+  body[data-status=idle],.js body.app-body[data-status=idle]{height:auto;overflow:visible}
   body[data-status=idle] main.app{height:auto}
   body[data-status=idle] .screen{height:auto}
   body[data-status=idle] .stage{flex:none}
