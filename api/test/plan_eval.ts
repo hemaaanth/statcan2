@@ -157,6 +157,7 @@ const heldout: Case[] = [
 const fresh: Case[] = [
   { q: "tv", status: "ok", pid: "22100094" },
   { q: "hours spent watching tv", status: "ok", pid: "22100094" },
+  { q: "gas vs. tv", status: "ok", layers: ["18100004", "22100004"] },
   { q: "unemployment lately", status: "ok", pid: "14100287", time: "1Y" },
   { q: "unemployment since the pandemic", status: "ok", pid: "14100287", time: "5Y" },
   { q: "how expensive is food getting", status: "ok", pid: "18100004", transform: "pct_change_yoy" },

@@ -679,7 +679,7 @@ async function candidates(db: Db, q: string, cues: Cues, concept?: CatalogConcep
   }
   const [found, semantic] = await Promise.all([
     Promise.all([...searches].slice(0, 3).map((s) => db.search(s, opts).catch(() => ({ rows: [] as Row[] })))),
-    concept ? Promise.resolve([]) : semanticSeed.length ? Promise.resolve(semanticSeed)
+    semanticSeed.length ? Promise.resolve(semanticSeed) : concept ? Promise.resolve([])
       : semanticTablePids(db, q, signal).catch(() => []),
   ]);
   const ranked = new Map<string, { row: Row; score: number }>();
@@ -722,11 +722,12 @@ async function candidates(db: Db, q: string, cues: Cues, concept?: CatalogConcep
   const semanticSet = new Set(semantic);
   const semanticMatches = current.filter((item) => semanticSet.has(String(item.row.pid)));
   const lexicalMatches = current.filter((item) => !semanticSet.has(String(item.row.pid)));
+  const semanticLimit = parts.length > 1 ? Math.min(16, parts.length * 8) : 8;
   const pool = semanticMatches.length
-    ? [...semanticMatches.slice(0, 8), ...lexicalMatches.filter((item) => item.active).slice(0, 4),
+    ? [...semanticMatches.slice(0, semanticLimit), ...lexicalMatches.filter((item) => item.active).slice(0, 4),
       ...lexicalMatches.filter((item) => !item.active)]
     : [...active.slice(0, 10), ...inactive.slice(0, Math.max(2, 12 - active.length))];
-  const shortlist = pool.slice(0, 12)
+  const shortlist = pool.slice(0, semanticLimit + 4)
     .filter(({ row }) => {
       const pid = String(row.pid);
       if (db.info.get(pid)?.family !== "census_2021") return true;
@@ -1123,7 +1124,8 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
       .replace(/[,.:]+/g, " ").replace(/\s+/g, " ").trim();
     cues.places = [];
     cues.concepts = [topic];
-  } else cues.concepts = cues.concepts.length === 1 ? [topic] : topic.split(PARTS).filter((part) => words(part).length > 0);
+  } else cues.concepts = cues.concepts.length === 1 ? [topic] : topic.split(PARTS)
+    .filter((part) => words(part).length > 0 || /^[\p{L}\p{N}]{2}$/u.test(part.trim()));
   const hasKey = Boolean(process.env.TYPESAFE_API_KEY);
   let planner: PlanResult["planner"] = hasKey ? "jev" : "heuristic";
   let concept: CatalogConcept | undefined;
@@ -1214,8 +1216,18 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
       }
     }));
   }
+  const semanticParts: string[][] = process.env.STATCAN_EMBEDDINGS && process.env.OPENAI_API_KEY
+    ? await Promise.all(partConcepts.map((_, index) => cues.concepts[index]!.trim().length > 2 ? Promise.resolve([]) :
+      semanticTablePids(db, cues.concepts[index]!, signal).catch(() => []))) : partConcepts.map(() => []);
+  if (semanticParts.some((part) => part.length)) concept = undefined;
+  const interleavedSemanticParts = Array.from({ length: Math.max(0, ...semanticParts.map((part) => part.length)) },
+    (_, index) => semanticParts.flatMap((part) => part[index] ? [part[index]!] : [])).flat();
+  semanticSeed = [...new Set([...semanticSeed, ...interleavedSemanticParts])];
+  const trustsPartConcept = (index: number) => !semanticParts[index]!.length;
   const coversPart = (candidate: Candidate, part: string, index: number) =>
-    Boolean(partConcepts[index]?.pids.includes(candidate.cube.pid)) || covers(candidate.cube, part);
+    Boolean(trustsPartConcept(index) && partConcepts[index]?.pids.includes(candidate.cube.pid)) ||
+    semanticParts[index]!.includes(candidate.cube.pid) ||
+    covers(candidate.cube, part);
   const list = await candidates(db, topic, cues, concept, partConcepts, semanticSeed, signal);
   let answers: Answers = {};
   if (hasKey) try {
@@ -1232,7 +1244,8 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
     step(steps, "enough", String(probability(answers, "enough")), "jev", probability(answers, "enough"));
     step(steps, "related", String(probability(answers, "related")), "jev", probability(answers, "related"));
     if (probability(answers, "related") < 0.3) return result("no_match", planner);
-    if (probability(answers, "enough") < 0.35 && words(q).length < 3) return result("need_more", planner);
+    if (probability(answers, "enough") < 0.35 && cues.concepts.length === 1 && words(q).length < 3)
+      return result("need_more", planner);
   }
   if (!list.length) return result("no_match", planner);
   const tableChoice = choice(answers, "table");
@@ -1312,21 +1325,25 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
   const primaryCensusSubject = primary.cube.family === "census_2021" ? primary.cube.title.split(":")[0] : undefined;
   if (cues.concepts.length > 1) for (const [partIndex, part] of cues.concepts.entries()) {
     if (coversPart(primary, part, partIndex)) continue;
-    const partConcept = partConcepts[partIndex];
+    const partConcept = trustsPartConcept(partIndex) ? partConcepts[partIndex] : undefined;
     const priority = (item: Candidate) => {
       const index = partConcept?.pids.indexOf(item.cube.pid) ?? -1;
       return index < 0 ? Infinity : index;
     };
-    const eligible = list.filter((item) => item !== primary && coversPart(item, part, partIndex) && !other.includes(item) &&
+    const partCues = { ...cues, concepts: [part] };
+    const eligible = list.filter((item) => item !== primary && supports(item.cube, part, partCues) &&
+      coversPart(item, part, partIndex) && !other.includes(item) &&
       !(primaryCensusSubject && item.cube.family === "census_2021" &&
         primaryCensusSubject === item.cube.title.split(":")[0]))
       .sort((a, b) => priority(a) - priority(b) ||
+        Number(b.active) - Number(a.active) ||
         titleScore(b.cube.title, part) - titleScore(a.cube.title, part) ||
         Number(b.cube.frequency === primaryCube.frequency) - Number(a.cube.frequency === primaryCube.frequency) ||
         probability(answers, `t${list.indexOf(b)}.needed`) - probability(answers, `t${list.indexOf(a)}.needed`));
     const extra = eligible[0];
     const needed = extra ? probability(answers, `t${list.indexOf(extra)}.needed`) : 0;
-    const explicitConcept = extra && cues.concepts.length > 1 && Boolean(partConcept?.pids.includes(extra.cube.pid) || titleScore(extra.cube.title, part) >= 2);
+    const explicitConcept = extra && cues.concepts.length > 1 && Boolean(partConcept?.pids.includes(extra.cube.pid) ||
+      semanticParts[partIndex]!.includes(extra.cube.pid) || titleScore(extra.cube.title, part) >= 2);
     if (extra && (planner !== "jev" || needed > 0.5 || explicitConcept)) {
       other.push(extra);
       step(steps, "table.needed", extra.cube.pid, explicitConcept || planner !== "jev" ? "rule" : "jev",
