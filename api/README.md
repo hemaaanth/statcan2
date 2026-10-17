@@ -26,6 +26,7 @@ npm run check   # tsc --noEmit
 - `STATCAN_UUID` (optional): refuse to start unless the builds, code sets, and capture are on this filesystem, same rule as the downloader.
 - `HOST` defaults to `127.0.0.1`; `PORT` to `3000` (HTTP server only).
 - `PUBLIC_ORIGIN` defaults to `https://statcan2.ca`. It sets absolute Open Graph, canonical, Cite, chart/share links, OpenAPI servers, and MCP text; request-relative navigation stays relative. For local link testing set `PUBLIC_ORIGIN=http://127.0.0.1:3000`. Image footers always say `statcan2.ca`, even with an override.
+- `STATCAN_EMBEDDINGS` (optional): the identity-index Parquet produced by `tools/semantic_retrieval.py`. With `OPENAI_API_KEY`, the planner uses it when Jev does not identify a known catalogue concept. A missing index or failed embedding request falls back to lexical candidates.
 
 DuckDB runs with 4 threads and a 2 GB memory limit. It spills to `<STATCAN_BUILD>/tmp`. Stop the server with SIGTERM or SIGINT so DuckDB deletes its spill files.
 
@@ -39,7 +40,9 @@ The repo-root `Dockerfile` builds the server (the API reads `api/` and `data/ref
 /data/codesets/{codeSets.json,codeSets.json.sha256}
 ```
 
-`tmp` must be writable by the `node` user (uid 1000). Leave `STATCAN_UUID` unset. Set `TYPESAFE_API_KEY` for the planner. statcan2.ca runs this image on Coolify behind a Cloudflare Tunnel.
+`tmp` must be writable by the `node` user (uid 1000). Leave `STATCAN_UUID` unset. Set `TYPESAFE_API_KEY` for the planner. To enable semantic candidate fallback, mount the generated identity index, set `STATCAN_EMBEDDINGS` to it, and set `OPENAI_API_KEY`.
+
+The current statcan2.ca host runs `deploy/statcan2.service` on port 3022 behind a Cloudflare Tunnel. The identity index lives outside the immutable Normalized build at `wds-full-1/retrieval/<normalized-build-id>/table-embeddings-identity.parquet`.
 
 Node 26 runs the TypeScript directly; no build step. Dependencies include `hono`, `@hono/node-server`, `@duckdb/node-api`, `@modelcontextprotocol/sdk`, `zod`, `@resvg/resvg-js`, and the locally bundled Geist font files. OG cards render SVG to PNG in-process; no browser or screenshot service is needed.
 

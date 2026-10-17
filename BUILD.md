@@ -354,3 +354,39 @@ The optimized output has 56,841,442 series rows, 43,851,527 bytes (0.77 bytes/se
 - `vector` is empty, so any Normalized step keyed on `(pid, vector)` must use `(pid, coordinate)` for Census tables.
 - `...` cells with `VALUE` `0` are stored as written; `value_num` is 0.0 for them.
 - French ZIPs are not captured.
+
+## Semantic retrieval prototype
+
+`tools/semantic_retrieval.py` builds a separate OpenAI embedding index over the
+Normalized table catalogue. It does not modify Normalized. The planner can read
+the index as an optional fallback. The tool compares whole-token lexical
+results, cosine-ranked semantic results, and weighted reciprocal-rank fusion
+against `tools/retrieval_eval.csv`.
+
+```bash
+set -a; source api/.env; set +a
+uv run --with-requirements requirements.txt python tools/semantic_retrieval.py build \
+  --normalized "$STATCAN_NORMALIZED" --output /tmp/statcan-table-embeddings.parquet
+uv run --with-requirements requirements.txt python tools/semantic_retrieval.py evaluate \
+  --normalized "$STATCAN_NORMALIZED" --index /tmp/statcan-table-embeddings.parquet \
+  --cases tools/retrieval_eval.csv
+```
+
+Repeat `--index` to fuse an identity index with a full-document index.
+
+The default build embeds the short table identity: title, subject, survey, and
+dimension names. Add `--document full` to include notes and a bounded member
+list. Add
+`--concepts data/ref/concepts.csv` to test the small curated concept catalogue
+as extra document text. Keeping this switch explicit makes both benchmark
+variants reproducible.
+
+The prototype pins `text-embedding-3-small` at 512 dimensions. Documents are
+bounded at 12,000 characters; exact lexical search remains responsible for the
+full member list. The build is resumable when the output Parquet already has a
+matching document hash, model, and dimension count.
+
+Set `STATCAN_EMBEDDINGS` to the identity-index Parquet and provide
+`OPENAI_API_KEY` to add semantic candidates when Jev does not identify a known
+catalogue concept. The planner falls back to its existing lexical candidates if
+the index or hosted embedding request is unavailable.

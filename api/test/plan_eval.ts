@@ -155,6 +155,12 @@ const heldout: Case[] = [
 ];
 // New paraphrases stay separate from tuned cases; report their first-pass result independently.
 const fresh: Case[] = [
+  { q: "tv", status: "ok", pid: "22100094" },
+  { q: "hours spent watching tv", status: "ok", pid: "22100094" },
+  { q: "unemployment lately", status: "ok", pid: "14100287", time: "1Y" },
+  { q: "unemployment since the pandemic", status: "ok", pid: "14100287", time: "5Y" },
+  { q: "how expensive is food getting", status: "ok", pid: "18100004", transform: "pct_change_yoy" },
+  { q: "show population using columns", status: "ok", pid: "17100009", chart: "bar" },
   { q: "employment rate for men versus women in Ontario", status: "ok", pid: "14100287", measure: "Employment rate", members: ["Men+", "Women+"] },
   { q: "joblessness among youth and adults in Quebec", status: "ok", pid: "14100287", measure: "Unemployment rate", members: ["Quebec", "15 to 24 years", "25 years and over"] },
   { q: "population growth in Quebec over the past decade", status: "ok", pid: "17100009", transform: "pct_change_yoy", members: ["Quebec"] },

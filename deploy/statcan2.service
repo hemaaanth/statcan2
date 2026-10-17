@@ -1,0 +1,19 @@
+[Unit]
+Description=statcan2.ca API and website
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/statcan/api
+EnvironmentFile=%h/Projects/statcan/api/.env
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3022
+Environment=STATCAN_EMBEDDINGS=/run/media/hemanth/Kingston/statcan-derived/wds-full-1/retrieval/n8/table-embeddings-identity.parquet
+ExecStart=%h/.local/share/mise/installs/node/26.10.0/bin/node --env-file=.env src/index.ts
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

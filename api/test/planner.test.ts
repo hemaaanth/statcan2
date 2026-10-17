@@ -1,8 +1,34 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
-import { orderMembersByQuery, parseCues, relativeMembers, tablePid } from "../src/planner.ts";
+import { orderMembersByQuery, parseCues, relativeMembers, semanticTablePids, tablePid } from "../src/planner.ts";
+import type { Db } from "../src/db.ts";
 
 // These tests make no network or database calls.
+test("semantic table retrieval validates the hosted vector before querying DuckDB", async () => {
+  const oldIndex = process.env.STATCAN_EMBEDDINGS;
+  const oldKey = process.env.OPENAI_API_KEY;
+  process.env.STATCAN_EMBEDDINGS = "/tmp/test-embeddings.parquet";
+  process.env.OPENAI_API_KEY = "test-key";
+  const queries: string[] = [];
+  const db = {
+    one: async () => ({ model: "test-model", dimensions: 2 }),
+    query: async (sql: string) => { queries.push(sql); return [{ pid: "22100097", score: queries.length === 1 ? 0.5 : 0.2 }]; },
+  } as unknown as Db;
+  const fetchMock = mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    data: [{ embedding: [0.25, -0.5] }],
+  }), { status: 200 }));
+  try {
+    assert.deepEqual(await semanticTablePids(db, "tv"), ["22100097"]);
+    assert.match(queries[0]!, /\[0.25,-0.5\]::FLOAT\[\]/);
+    assert.deepEqual(await semanticTablePids(db, "un"), []);
+    assert.equal(fetchMock.mock.calls.length, 2);
+  } finally {
+    fetchMock.mock.restore();
+    if (oldIndex === undefined) delete process.env.STATCAN_EMBEDDINGS; else process.env.STATCAN_EMBEDDINGS = oldIndex;
+    if (oldKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = oldKey;
+  }
+});
+
 test("table numbers require a complete, valid printed suffix", () => {
   assert.equal(tablePid("18-10-0006"), "18100006");
   assert.equal(tablePid("18-10-0006-01"), "18100006");

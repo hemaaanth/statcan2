@@ -8,7 +8,7 @@ import { runView, type ViewOutcome } from "./view.ts";
 
 type GroupTarget = { label: string; region?: Region; place?: string };
 type Cues = { time: TimeWindow; relativeMonths?: number; geography: string; places: string[]; concepts: string[]; groups?: GroupTarget[]; groupTerms?: string[]; byRegion?: boolean; physiographic?: Region; transform?: Transform; indexBase?: string; chart?: ChartType; requestedChart?: ChartType | "pie" | "table"; horizontal?: boolean; fullHistory: boolean; range: boolean; latest: boolean };
-type Candidate = { cube: CubeInfo; titleScore: number; active: boolean };
+type Candidate = { cube: CubeInfo; titleScore: number; active: boolean; semantic?: boolean };
 type CatalogConcept = { id: string; label: string; description: string; pids: string[] };
 const CONCEPTS: CatalogConcept[] = readFileSync(new URL("../../data/ref/concepts.csv", import.meta.url), "utf8").trim().split("\n").slice(1)
   .map((line) => {
@@ -19,20 +19,6 @@ const STOP: Record<string, true> = Object.fromEntries("a an the is are what how 
 const WORK_TRAVEL = /\b(?:get|go|travel)(?:s|ing)?\s+to\s+(?:(?:their|the|your|our)\s+)?(?:work|jobs?)\b/i;
 const CAR_SALES = /\b(?:car|automobile|motor vehicle)s?\s+sales?\b/i;
 const SALES_METRIC = /\b(?:sales|sold|receipts?|turnover|revenue|transactions?)\b/i;
-const SYNONYMS: [RegExp, string][] = [
-  [/\bcpi\b|\binflation\b|\bprices?\b|\bcost of living\b/i, "consumer price index"],
-  [/\bgas\b|\bgasoline\b|\bfuel\b/i, "gasoline"],
-  [CAR_SALES, "new motor vehicle sales"],
-  [/\bjobs?\b|\bemployment\b|\bunemployment\b|\bjobless(?:ness)?\b/i, "labour force"],
-  [WORK_TRAVEL, "main mode of commuting"],
-  [/\b(?:bik(?:e|ing)|cycl(?:e|ing))\b/i, "bicycle"],
-  [/\brent(?:s|al)?\b/i, "rent"],
-  [/\bwages?\b|\bearnings?\b/i, "earnings"],
-  [/\bpeople\b|\bpopulation\b/i, "population"],
-  [/\bdeaths?\b|\bmortality\b/i, "deaths"],
-  [/\bgdp\b/i, "gross domestic product"],
-  [/\bsmokers?\b|\bsmoking\b/i, "smoking"],
-];
 const MEMBER_TERMS: [RegExp, string][] = [
   [/\b(?:gas|gasoline)\b/i, "Gasoline"],
   [/\bfood\b/i, "Food"],
@@ -140,6 +126,31 @@ const PARTS = /\s+(?:vs\.?|versus|compared to|compared with|and|or)\s+/i;
 const PRESETS = ["latest", "1Y", "2Y", "5Y", "10Y", "20Y", "max"] as const;
 const CHARTS = ["line", "area", "bar", "stacked_bar", "stacked_bar_100", "stacked_area"] as const;
 const TRANSFORMS = ["level", "pct_change_yoy", "pct_change_period", "pct_change_window", "index_first", "share_of_x"] as const;
+const TIME_CRITERIA = {
+  latest: "Only the most recent published period; a snapshot, current value, or ranking.",
+  "1Y": "Approximately the latest year; recent, lately, or the past twelve months.",
+  "2Y": "Approximately the latest two years.",
+  "5Y": "Approximately the latest five years; since the pandemic, or the default trend window.",
+  "10Y": "Approximately the latest decade.",
+  "20Y": "Approximately the latest twenty years or a long historical comparison.",
+  max: "The full published history; all time or the entire available series.",
+} satisfies Record<(typeof PRESETS)[number], string>;
+const CHART_CRITERIA = {
+  line: "Values over time as lines; the default for a trend.",
+  area: "Values over time as filled areas.",
+  bar: "Categories as bars or columns, including rankings and snapshots.",
+  stacked_bar: "Additive category parts as stacked bars or columns.",
+  stacked_bar_100: "Category composition normalized to 100 percent.",
+  stacked_area: "Additive parts over time as stacked areas.",
+} satisfies Record<(typeof CHARTS)[number], string>;
+const TRANSFORM_CRITERIA = {
+  level: "Published values without calculating change.",
+  pct_change_yoy: "Year-over-year percent change: inflation, growth, rising, falling, or getting more expensive.",
+  pct_change_period: "Percent change from the immediately preceding published period.",
+  pct_change_window: "Total percent change across the requested window: how much something changed from start to end.",
+  index_first: "Normalize unlike levels to 100 at the start or a named base period so their trends can be compared.",
+  share_of_x: "Each category's percentage share of the selected total.",
+} satisfies Record<(typeof TRANSFORMS)[number], string>;
 const opts = { queryable: true, limit: 12, offset: 0 };
 type CacheEntry = { promise: Promise<PlanResult>; controller: AbortController; waiters: number; pending: boolean };
 const cache = new Map<string, CacheEntry>();
@@ -493,7 +504,7 @@ function snapshotDimensions(cube: CubeInfo, q: string, dims: Record<string, Dime
         : { use: "fixed", members: { eq: target?.id ?? geo.default_member_id } };
   }
   const axis = snapshotCategory(cube, q, dims);
-  const subject = expanded(q).join(" ");
+  const subject = q;
   const subjectWords = new Set(words(subject));
   for (const d of cube.dimensions) {
     if (d.role === "geography" || d.id === axis?.dimension.id) continue;
@@ -518,7 +529,7 @@ function snapshotDimensions(cube: CubeInfo, q: string, dims: Record<string, Dime
     }
   }
   if (axis) {
-    const mentioned = expanded(q).join(" ");
+    const mentioned = q;
     const named = axis.dimension.members.filter((m) => m.parent_id != null &&
       m.parent_id !== axis.dimension.default_member_id && m.label.length >= 4 &&
       (m.label === "Public transit" && /\btransit\b/i.test(q) ||
@@ -566,9 +577,6 @@ function singular(word: string): string {
     : /(?:sses|xes|ches|shes)$/.test(word) ? word.slice(0, -2)
     : word.length > 3 ? word.replace(/s$/, "") : word;
 }
-function expanded(text: string) {
-  return [text, ...SYNONYMS.filter(([re]) => re.test(text)).map(([, synonym]) => synonym)];
-}
 function matches(label: string, q: string): number {
   const name = label.toLowerCase();
   return words(q).reduce((score, token) => score + (new RegExp(`\\b${token}\\b`, "i").test(name) ? 1 : 0), 0);
@@ -589,26 +597,19 @@ function lexicalConcept(part: string, censusOnly = false): CatalogConcept | unde
     const value = score(concept, part);
     if (value > highest) { best = concept; highest = value; }
   }
-  if (best) return best;
-  for (const concept of eligible) {
-    const value = Math.max(...expanded(part).slice(1).map((phrase) => score(concept, phrase)), 0);
-    if (value > highest) { best = concept; highest = value; }
-  }
   return best;
 }
 
 function titleScore(title: string, q: string): number {
-  return Math.max(...expanded(q).map((phrase) => matches(title, phrase)));
+  return matches(title, q);
 }
 
 function covers(cube: CubeInfo, q: string): boolean {
   const core = words(q).filter((term) => !["census", "province", "provinces", "territory", "territories", "monthly", "annual", "latest", "year", "years"].includes(term) && !Object.keys(PLACES).includes(term));
-  const terms = expanded(q);
-  const needed = Math.min(2, Math.max(1, core.length,
-    terms.some((phrase, index) => index > 0 && phrase.includes(" ")) ? 2 : 1));
+  const needed = Math.min(2, Math.max(1, core.length));
   return MEMBER_TERMS.some(([re, label]) => re.test(q) && cube.dimensions.some((d) => d.members.some((m) => termMember(m, label, q)))) ||
-    terms.some((phrase) => matches(cube.title, phrase) >= needed) ||
-    cube.dimensions.some((d) => d.members.some((m) => terms.some((phrase) => matches(m.label, phrase) >= needed)));
+    matches(cube.title, q) >= needed ||
+    cube.dimensions.some((d) => d.members.some((m) => matches(m.label, q) >= needed));
 }
 function metricFits(cube: CubeInfo, q: string): boolean {
   const sales = /\b(?:sales?|receipts?|turnover|revenue|transactions?)\b/i.test(q);
@@ -666,17 +667,21 @@ function supports(cube: CubeInfo, q: string, cues: Cues, allowMissing = false): 
       cube.dimensions.some((d) => d.members.some((m) => termMember(m, label, q))));
 }
 
-async function candidates(db: Db, q: string, cues: Cues, concept?: CatalogConcept, parts: (CatalogConcept | undefined)[] = []): Promise<Candidate[]> {
+async function candidates(db: Db, q: string, cues: Cues, concept?: CatalogConcept,
+  parts: (CatalogConcept | undefined)[] = [], semanticSeed: string[] = [], signal?: AbortSignal): Promise<Candidate[]> {
   const searches = new Set<string>();
   const stripped = q.replace(/\b(?:since|in)\s+(?:19|20)\d{2}\b|\b(?:past|last)\s+(?:\d+\s+)?(?:year|month)s?\b/gi, "")
     .replace(/\b(?:by|across|each)\s+provinces?\b/gi, "").trim();
   for (const part of [...cues.concepts, stripped]) {
     const terms = words(part).filter((w) => !Object.keys(PLACES).includes(w));
     if (terms.length && terms.length <= 5) searches.add(terms.join(" "));
-    for (const phrase of expanded(part)) if (phrase !== part) searches.add(phrase);
     for (const token of terms.slice(0, 2)) searches.add(token);
   }
-  const found = await Promise.all([...searches].slice(0, 3).map((s) => db.search(s, opts).catch(() => ({ rows: [] as Row[] }))));
+  const [found, semantic] = await Promise.all([
+    Promise.all([...searches].slice(0, 3).map((s) => db.search(s, opts).catch(() => ({ rows: [] as Row[] })))),
+    concept ? Promise.resolve([]) : semanticSeed.length ? Promise.resolve(semanticSeed)
+      : semanticTablePids(db, q, signal).catch(() => []),
+  ]);
   const ranked = new Map<string, { row: Row; score: number }>();
   for (const result of found) for (const row of result.rows) {
     const pid = String(row.pid);
@@ -684,7 +689,6 @@ async function candidates(db: Db, q: string, cues: Cues, concept?: CatalogConcep
     const queryTerms = words(q);
     const score = Number(row.title_hits ?? 0) * 3 + Number(row.member_hits ?? 0) +
       queryTerms.reduce((sum, token) => sum + (title.includes(token) ? 2 : 0), 0) +
-      SYNONYMS.reduce((sum, [re, synonym]) => sum + (re.test(q) && title.includes(synonym) ? 7 : 0), 0) +
       (row.archived === "2" ? 2 : 0) + (row.period_max ? 1 : 0);
     const old = ranked.get(pid);
     if (!old || score > old.score) ranked.set(pid, { row, score });
@@ -692,7 +696,7 @@ async function candidates(db: Db, q: string, cues: Cues, concept?: CatalogConcep
   const related = concept && cues.geography !== "one"
     ? CONCEPTS.filter((other) => other !== concept && matches(other.label, concept.label) >= 2).slice(0, 3) : [];
   const preferred = [...new Set([...(concept?.pids ?? []), ...parts.flatMap((part) => part?.pids ?? []),
-    ...related.flatMap((entry) => entry.pids)])].filter((pid) => db.info.get(pid)?.queryable);
+    ...related.flatMap((entry) => entry.pids), ...semantic])].filter((pid) => db.info.get(pid)?.queryable);
   const ordered = [
     ...preferred.map((pid) => ranked.get(pid) ?? { row: { pid, title_en: db.info.get(pid)!.title_en }, score: 0 }),
     ...[...ranked.values()].sort((a, b) => b.score - a.score),
@@ -715,7 +719,14 @@ async function candidates(db: Db, q: string, cues: Cues, concept?: CatalogConcep
   const preferPublished = concept?.pids.some((pid) => db.info.get(pid)?.family === "wds") &&
     !/\bcensus\b/i.test(q) && (!concept.id.startsWith("census_") || Boolean(cues.range));
   let unknownCensus = 0;
-  const shortlist = [...active.slice(0, 10), ...inactive.slice(0, Math.max(2, 12 - active.length))].slice(0, 12)
+  const semanticSet = new Set(semantic);
+  const semanticMatches = current.filter((item) => semanticSet.has(String(item.row.pid)));
+  const lexicalMatches = current.filter((item) => !semanticSet.has(String(item.row.pid)));
+  const pool = semanticMatches.length
+    ? [...semanticMatches.slice(0, 8), ...lexicalMatches.filter((item) => item.active).slice(0, 4),
+      ...lexicalMatches.filter((item) => !item.active)]
+    : [...active.slice(0, 10), ...inactive.slice(0, Math.max(2, 12 - active.length))];
+  const shortlist = pool.slice(0, 12)
     .filter(({ row }) => {
       const pid = String(row.pid);
       if (db.info.get(pid)?.family !== "census_2021") return true;
@@ -727,12 +738,42 @@ async function candidates(db: Db, q: string, cues: Cues, concept?: CatalogConcep
   const cubes = await Promise.all(shortlist.map((item) => getCube(db, String(item.row.pid))));
   return shortlist.flatMap((item, i) => cubes[i] ? [{
     cube: cubes[i]!, titleScore: titleScore(cubes[i]!.title, q), active: item.active,
+    semantic: semanticSet.has(String(item.row.pid)),
   }] : []);
+}
+
+export async function semanticTablePids(db: Db, q: string, signal?: AbortSignal): Promise<string[]> {
+  const index = process.env.STATCAN_EMBEDDINGS;
+  const key = process.env.OPENAI_API_KEY;
+  if (!index || !key) return [];
+  const meta = await db.one("SELECT model, dimensions FROM read_parquet($1) LIMIT 1", [index]);
+  const model = typeof meta?.model === "string" ? meta.model : "";
+  const dimensions = Number(meta?.dimensions);
+  if (!model || !Number.isInteger(dimensions) || dimensions < 1) return [];
+  const timeout = AbortSignal.timeout(4_000);
+  const response = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({ model, input: [q], dimensions, encoding_format: "float" }),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  if (!response.ok) throw new Error(`Embedding HTTP ${response.status}`);
+  const body = await response.json() as { data?: { embedding?: unknown }[] };
+  const vector = body.data?.[0]?.embedding;
+  if (!Array.isArray(vector) || vector.length !== dimensions ||
+    !vector.every((value) => typeof value === "number" && Number.isFinite(value)))
+    throw new Error("Invalid embedding response");
+  // Values are validated finite numbers before interpolation; DuckDB's Node binder cannot bind FLOAT[].
+  const rows = await db.query(`SELECT pid, list_cosine_similarity(embedding, [${vector.join(",")}]::FLOAT[]) AS score
+    FROM read_parquet($1) ORDER BY score DESC LIMIT 12`, [index]);
+  // shortcut: two-character queries need one strong semantic match; calibrate this threshold on a larger query set.
+  if (q.trim().length <= 2 && Number(rows[0]?.score ?? 0) < 0.3) return [];
+  return rows.map((row) => String(row.pid));
 }
 
 function preview(cube: CubeInfo, q: string, index: number) {
   return { id: `t${index}`, pid: cube.pid, title: cube.title, frequency: cube.frequency, period: [cube.period_min, cube.period_max],
-    family: cube.family, dimensions: cube.dimensions.map((d) => ({
+    family: cube.family, units: cube.unit_families, dimensions: cube.dimensions.map((d) => ({
       id: d.id, name: d.name, role: d.role,
       members: [...(cube.family === "census_2021" && d.role === "geography" ? censusGeoMembers(d, q) : d.members)]
         .sort((a, b) => matches(b.label, q) - matches(a.label, q) || a.depth - b.depth)
@@ -744,21 +785,22 @@ function initialQuestions(list: Candidate[], concept?: CatalogConcept): Question
   const questions: Questions = {
     enough: { type: "noul", instructions: "Is this typed query specific enough to choose a meaningful Statistics Canada chart? A topic or table name such as CPI is enough; fragments, filler words, and unrelated requests are not." },
     related: { type: "noul", instructions: "Is this query about Canadian statistics or data that Statistics Canada could publish? Recipes, sports trivia and programming help are unrelated." },
-    table: { type: "choice", instructions: `Choose the best listed table for the primary statistical subject. ${concept ? `The selected concept is ${concept.label}: ${concept.description}. Its ordered tables are ${concept.pids.join(", ")}; prefer the first current table that covers the request.` : ""} Prefer a current active table with recent data over an inactive or stale table; use inactive only when no current table covers the requested statistic. Do not substitute a price index for sales or a retail industry for restaurants. Prefer a single table covering all named places and compared categories. A table with the main concept but missing a subgroup is still a valid partial match. For comparisons needing separate tables select the primary and mark other tables needed. Pick none only if every table is unrelated.`,
-      criteria: Object.fromEntries([...list.map(({ cube, active }, i) => [`t${i}`, { description: `${cube.title} (${active ? "current" : "inactive or historical"}; through ${cube.period_max ?? "unknown"}); ${cube.dimensions.map((d) => d.name).join(", ")}` }]), ["none", "Every candidate is unrelated to the main concept."]]) },
-    time: { type: "choice", instructions: "Choose the time window explicitly requested in the query; otherwise use the last five years available, or all available annual observations if fewer than five.", criteria: Object.fromEntries(PRESETS.map((p) => [p, p])) },
-    chart: { type: "choice", instructions: "With multiple periods, default to a time-axis line and put requested breakdowns in series. Use a latest-period category bar for snapshots, explicitly requested bars, or more than 13 series. Respect an explicitly requested supported chart type.", criteria: Object.fromEntries(CHARTS.map((p) => [p, p])) },
-    transform: { type: "choice", instructions: "Use published levels unless the query asks for inflation, growth, change, or another transform. A past/last time window alone does not request a transform.", criteria: Object.fromEntries(TRANSFORMS.map((p) => [p, p])) },
+    table: { type: "choice", instructions: `Choose the best listed table for the primary statistical subject. ${concept ? `The selected concept is ${concept.label}: ${concept.description}. Its ordered tables are ${concept.pids.join(", ")}; prefer the first current table that covers the request.` : ""} Match an explicitly requested measurement unit; for example, hours require a time measure rather than a percent measure. Prefer a current active table with recent data over an inactive or stale table; use inactive only when no current table covers the requested statistic. Do not substitute a price index for sales or a retail industry for restaurants. Prefer a single table covering all named places and compared categories. A table with the main concept but missing a subgroup is still a valid partial match. For comparisons needing separate tables select the primary and mark other tables needed. Pick none only if every table is unrelated.`,
+      criteria: Object.fromEntries([...list.map(({ cube, active }, i) => [`t${i}`, { description: `${cube.title} (${active ? "current" : "inactive or historical"}; through ${cube.period_max ?? "unknown"}; units ${cube.unit_families.join(", ") || "unknown"}); ${cube.dimensions.map((d) => d.name).join(", ")}` }]), ["none", "Every candidate is unrelated to the main concept."]]) },
+    time_explicit: { type: "noul", instructions: "Does the query explicitly request a time window or recency, including informal language such as lately, since the pandemic, or the long run? A topic with no time language is not explicit." },
+    time: { type: "choice", instructions: "Choose the closest supported time window explicitly requested in the query; otherwise choose 5Y, or max for an annual table with fewer than five available years.", criteria: TIME_CRITERIA },
+    chart_explicit: { type: "noul", instructions: "Does the query explicitly request a visual form such as lines, areas, bars, columns, stacking, or a ranking? A breakdown or comparison without a visual-form word is not explicit." },
+    chart: { type: "choice", instructions: "With multiple periods, default to a time-axis line and put requested breakdowns in series. Use a latest-period category bar for snapshots, explicitly requested bars or columns, or more than 13 series. Respect an explicitly requested supported chart type.", criteria: CHART_CRITERIA },
+    transform: { type: "choice", instructions: "Use published levels unless the query asks for inflation, growth, change, normalization, or composition. A past/last time window alone does not request a transform.", criteria: TRANSFORM_CRITERIA },
   };
   list.forEach(({ cube }, i) => { questions[`t${i}.needed`] = { type: "noul", instructions: `Does the query need data specifically from ${cube.title} (${cube.pid}) in addition to its best table? Do not select a second table if one table has both compared members.` }; });
   return questions;
 }
 
 function relevantMembers(d: CubeDimension, q: string) {
-  const expandedQ = expanded(q).join(" ");
   return [...d.members].sort((a, b) =>
-    (b.id === d.default_member_id ? 100 : 0) + matches(b.label, expandedQ) * 10 - b.depth -
-    ((a.id === d.default_member_id ? 100 : 0) + matches(a.label, expandedQ) * 10 - a.depth));
+    (b.id === d.default_member_id ? 100 : 0) + matches(b.label, q) * 10 - b.depth -
+    ((a.id === d.default_member_id ? 100 : 0) + matches(a.label, q) * 10 - a.depth));
 }
 function requestedMeasure(d: CubeDimension, q: string): number[] {
   if (d.role !== "measure") return [];
@@ -828,7 +870,7 @@ async function dimensions(cube: CubeInfo, q: string, cues: Cues, signal?: AbortS
     const prefix = `d${d.id}`;
     const selected = picked.get(d.id) ?? d.members;
     const explicit = MEMBER_TERMS.filter(([re]) => re.test(q)).map(([, label]) => label);
-    const matched = selected.filter((m) => matches(m.label, expanded(q).join(" ")) > 0 && m.id !== d.default_member_id &&
+    const matched = selected.filter((m) => matches(m.label, q) > 0 && m.id !== d.default_member_id &&
       (!/\bexclud(?:e|ing)\b/i.test(m.label) || /\bexclud(?:e|ing)\b/i.test(q)));
     const named = d.role === "geography"
       ? cues.places.flatMap((place) => {
@@ -1013,7 +1055,14 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
     alternatives: PlanResult["alternatives"] = [], reason?: string): PlanResult =>
     ({ status, q: input, spec, alternatives, ...(reason ? { reason } : {}), steps, planner,
       ms: Math.round(performance.now() - start), build_id: db.manifest.build_id, normalized_build_id: db.normalized.build_id });
-  if (words(q).join("").length < 2) { step(steps, "enough", "false", "rule"); return result("need_more", "rule"); }
+  let semanticSeed: string[] = [];
+  if (words(q).join("").length < 2) {
+    if (process.env.STATCAN_EMBEDDINGS && process.env.OPENAI_API_KEY && /^[\p{L}\p{N}]{2,}$/u.test(q.trim()))
+      semanticSeed = await semanticTablePids(db, q, signal).catch(() => []);
+    if (!semanticSeed.length) {
+      step(steps, "enough", "false", "rule"); return result("need_more", "rule");
+    }
+  }
   q = normalizeKnownWords(q.replace(/\bcauses?\s+of\s+death\b/gi, "deaths by cause"));
   const cues = parseCues(q);
   if (cues.physiographic) {
@@ -1110,7 +1159,8 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
     }
     step(steps, "concept", concept?.id ?? "none", concept?.id === chosen.value ? "jev" : "rule",
       concept?.id === chosen.value ? chosen.confidence : null);
-    if (chosen.value === "none" && chosen.confidence >= 0.6 && !lexicalConcept(topic))
+    if (chosen.value === "none" && chosen.confidence >= 0.6 && !lexicalConcept(topic) &&
+      !(process.env.STATCAN_EMBEDDINGS && process.env.OPENAI_API_KEY))
       return result("no_match", planner);
   } catch (error) {
     if (signal?.aborted) throw error;
@@ -1148,8 +1198,25 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
   }
   if (concept?.id.startsWith("census_") && cues.places.length >= 2 && cues.places.length <= 3 &&
     /\b(?:vs\.?|versus|compared (?:to|with)|and)\b/i.test(q)) cues.concepts = [topic];
-  const partConcepts = cues.concepts.length > 1 ? cues.concepts.map((part) => lexicalConcept(part)) : [];
-  const list = await candidates(db, topic, cues, concept, partConcepts);
+  let partConcepts = cues.concepts.length > 1 ? cues.concepts.map((part) => lexicalConcept(part)) : [];
+  if (/\bamong\b/i.test(topic) && concept) partConcepts = partConcepts.map(() => concept);
+  if (hasKey && partConcepts.some((part) => !part)) {
+    const questions = conceptQuestion();
+    questions.concept!.instructions = "Choose the statistical concept for this query segment in the context of the full query. If the segment is a compared category, age, gender, place, or other breakdown of the primary statistic, choose the same primary concept. Choose a different concept only when the segment names a separate statistic.";
+    partConcepts = await Promise.all(partConcepts.map(async (fallback, index) => {
+      if (fallback) return fallback;
+      try {
+        const answer = choice(await askJev({ q, segment: cues.concepts[index], primaryConcept: concept?.id }, questions, signal), "concept");
+        return CONCEPTS.find((entry) => entry.id === answer.value) ?? fallback;
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        return fallback;
+      }
+    }));
+  }
+  const coversPart = (candidate: Candidate, part: string, index: number) =>
+    Boolean(partConcepts[index]?.pids.includes(candidate.cube.pid)) || covers(candidate.cube, part);
+  const list = await candidates(db, topic, cues, concept, partConcepts, semanticSeed, signal);
   let answers: Answers = {};
   if (hasKey) try {
     answers = await askJev({ q, cues, concept, candidates: list.map(({ cube }, i) => preview(cube, q, i)) }, {
@@ -1188,8 +1255,8 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
         m.place_id?.slice(5, 9) === "0005")))
     : undefined;
   const catalogChoice = namedRegion ?? catalogOptions[0];
-  const leading = partConcepts[0]?.pids.map((pid) => list.find(({ cube }) => cube.pid === pid &&
-    supports(cube, q, cues) && covers(cube, cues.concepts[0]!))).find((candidate) => candidate) ??
+  const leading = partConcepts[0]?.pids.map((pid) => list.find((candidate) => candidate.cube.pid === pid &&
+    supports(candidate.cube, q, cues) && coversPart(candidate, cues.concepts[0]!, 0))).find((candidate) => candidate) ??
     (cues.concepts.length > 1 ? list.find(({ cube, active }) =>
       active && supports(cube, q, cues) && covers(cube, cues.concepts[0]!)) ??
       list.find(({ cube }) => supports(cube, q, cues) && covers(cube, cues.concepts[0]!)) : undefined);
@@ -1211,9 +1278,9 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
   const wdsTrend = trend && concept?.pids
     ? list.find((item) => item.active && item.cube.family === "wds" && concept.pids.includes(item.cube.pid) &&
       supports(item.cube, q, cues)) : undefined;
-  let primary: Candidate | undefined = wdsTrend || (proposed?.active ? proposed : current ?? proposed);
+  let primary: Candidate | undefined = wdsTrend || (proposed?.active || proposed?.semantic ? proposed : current ?? proposed);
   if (leading && cues.concepts.length > 1 &&
-    !cues.concepts.every((part) => primary && covers(primary.cube, part))) primary = leading;
+    !cues.concepts.every((part, index) => primary && coversPart(primary, part, index))) primary = leading;
   if (!primary && cues.places.length >= 2 && /\b(?:vs\.?|versus|compared (?:to|with)|and)\b/i.test(q)) {
     const partial = list.filter(({ cube }) => supports(cube, q, cues, true));
     primary = concept?.pids.map((pid) => partial.find(({ cube }) => cube.pid === pid)).find((item) => item) ??
@@ -1244,13 +1311,13 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
   const other: Candidate[] = [];
   const primaryCensusSubject = primary.cube.family === "census_2021" ? primary.cube.title.split(":")[0] : undefined;
   if (cues.concepts.length > 1) for (const [partIndex, part] of cues.concepts.entries()) {
-    if (covers(primary.cube, part)) continue;
+    if (coversPart(primary, part, partIndex)) continue;
     const partConcept = partConcepts[partIndex];
     const priority = (item: Candidate) => {
       const index = partConcept?.pids.indexOf(item.cube.pid) ?? -1;
       return index < 0 ? Infinity : index;
     };
-    const eligible = list.filter((item) => item !== primary && covers(item.cube, part) && !other.includes(item) &&
+    const eligible = list.filter((item) => item !== primary && coversPart(item, part, partIndex) && !other.includes(item) &&
       !(primaryCensusSubject && item.cube.family === "census_2021" &&
         primaryCensusSubject === item.cube.title.split(":")[0]))
       .sort((a, b) => priority(a) - priority(b) ||
@@ -1326,7 +1393,7 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
       : cues.groups) } : cues;
   const layerDimensions = (candidate: Candidate, useJev: boolean) => {
     const part = layers.length > 1 && cues.concepts.length > 1
-      ? cues.concepts.find((term) => covers(candidate.cube, term)) ?? q : q;
+      ? cues.concepts.find((term, index) => coversPart(candidate, term, index)) ?? q : q;
     return dimensions(candidate.cube, part, part === q ? layerCues(candidate)
       : { ...layerCues(candidate), concepts: [part] }, signal, useJev);
   };
@@ -1354,6 +1421,9 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
     cube.dimensions.some((d) => d.members.some((m) => termMember(m, label, q))))) {
     step(steps, "member_not_found", `${label} not in this table`, "rule");
   }
+  const timeChoice = choice(answers, "time");
+  const chosenTime = probability(answers, "time_explicit") >= 0.5
+    ? PRESETS.find((preset) => preset === timeChoice.value) : undefined;
   let time: TimeWindow;
   if (cues.relativeMonths && primary.cube.period_max) {
     const date = new Date(`${primary.cube.period_max.slice(0, 7)}-01T00:00:00Z`);
@@ -1363,7 +1433,7 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
     const shortAnnual = primary.cube.frequency === "Annual" && primary.cube.period_min && primary.cube.period_max &&
       Number(primary.cube.period_max.slice(0, 4)) - Number(primary.cube.period_min.slice(0, 4)) < 4;
     time = cues.range || cues.latest || cues.time.from || cues.time.to || cues.fullHistory ? cues.time
-      : { preset: shortAnnual ? "max" : "5Y" };
+      : { preset: chosenTime ?? (shortAnnual ? "max" : "5Y") };
   }
   if (primary.cube.kind === "snapshot") time = { preset: "latest" };
   const commonStart = layers.length > 1 ? layers.map(({ cube }) => cube.period_min).filter((date): date is string => Boolean(date)).sort().at(-1) : undefined;
@@ -1372,8 +1442,10 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
   const xDims = primary.cube.dimensions.filter((d) => firstDims[String(d.id)]?.use === "x");
   if (xDims.length > 1) for (const d of xDims.slice(1)) firstDims[String(d.id)]!.use = "series";
   const chartChoice = choice(answers, "chart");
+  const chosenChart = probability(answers, "chart_explicit") >= 0.5
+    ? CHARTS.find((candidate) => candidate === chartChoice.value) : undefined;
   let chart: ChartType = cues.requestedChart && cues.requestedChart !== "pie" && cues.requestedChart !== "table"
-    ? cues.requestedChart : xDims.length || primary.cube.kind === "snapshot" || cues.latest ? "bar" : "line";
+    ? cues.requestedChart : chosenChart ?? (xDims.length || primary.cube.kind === "snapshot" || cues.latest ? "bar" : "line");
   if (!cues.requestedChart && cues.chart && xDims.length) chart = cues.chart;
   if (xDims.length && !["bar", "stacked_bar", "stacked_bar_100"].includes(chart)) {
     step(steps, "chart_warning", "A single-period category selection cannot display the requested time-axis chart; showing bars.", "rule");
@@ -1394,8 +1466,11 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
   }
   const hasX = primary.cube.dimensions.some((d) => firstDims[String(d.id)]?.use === "x");
   if (hasX && !cues.range && !cues.time.from && !cues.time.to) time = { preset: "latest" };
-  step(steps, "time", JSON.stringify(time), "rule");
-  let transform: Transform = cues.transform ?? "level";
+  step(steps, "time", JSON.stringify(time), chosenTime && !cues.range && !cues.latest ? "jev" : "rule",
+    chosenTime === time.preset ? timeChoice.confidence : null);
+  const transformChoice = choice(answers, "transform");
+  const chosenTransform = TRANSFORMS.find((candidate) => candidate === transformChoice.value);
+  let transform: Transform = cues.transform ?? chosenTransform ?? "level";
   // Table inventories include every measure's units; the view resolves the selected series' units.
   if (primary.cube.family === "census_2021" && layers.length === 1)
     transform = cues.transform === "share_of_x" ? "share_of_x" : "level";
@@ -1407,12 +1482,14 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
     step(steps, "chart_warning", "Stacking non-additive or transformed values would mislead; showing unstacked values.", "rule");
     chart = chart === "stacked_area" ? "area" : "bar";
   }
-  step(steps, "chart", chart, "rule", chart === chartChoice.value ? chartChoice.confidence : null);
-  step(steps, "transform", transform, "rule");
+  step(steps, "chart", chart, chosenChart === chart && !cues.requestedChart ? "jev" : "rule",
+    chart === chartChoice.value ? chartChoice.confidence : null);
+  step(steps, "transform", transform, chosenTransform === transform && !cues.transform ? "jev" : "rule",
+    transform === transformChoice.value ? transformChoice.confidence : null);
   const layerOrder = layers.map((_, index) => index);
   if (layerOrder.length > 1 && cues.concepts.length > 1) {
-    const ranks = layers.map(({ cube }) => {
-      const index = cues.concepts.findIndex((part) => covers(cube, part));
+    const ranks = layers.map((candidate) => {
+      const index = cues.concepts.findIndex((part, partIndex) => coversPart(candidate, part, partIndex));
       return index < 0 ? cues.concepts.length : index;
     });
     layerOrder.sort((a, b) => ranks[a]! - ranks[b]!);
