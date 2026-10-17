@@ -880,9 +880,9 @@ async function dimensions(cube: CubeInfo, q: string, cues: Cues, signal?: AbortS
         const proxy = geographyForPlace(d, place, !cues.groups && !/\b(?:sum|combined total|add up|ratio)\b/i.test(q));
         return proxy && selected.some((item) => item.id === proxy.id) ? [proxy] : [];
       })
-      : selected.filter((m) => explicit.some((label) => termMember(m, label, q)) ||
-        matched.includes(m) && new RegExp(`\\b${m.label.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(q) &&
-        !matched.some((n) => n.id !== m.id && n.label.toLowerCase().startsWith(`${m.label.toLowerCase()} `) && q.toLowerCase().includes(n.label.toLowerCase())));
+      : [...d.members.filter((m) => explicit.some((label) => termMember(m, label, q))),
+        ...selected.filter((m) => matched.includes(m) && new RegExp(`\\b${m.label.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(q) &&
+        !matched.some((n) => n.id !== m.id && n.label.toLowerCase().startsWith(`${m.label.toLowerCase()} `) && q.toLowerCase().includes(n.label.toLowerCase())))];
     const namedMembers = orderMembersByQuery(q, [...new Map(named.map((m) => [m.id, m])).values()]);
     const parts = d.role !== "geography" && cues.concepts.length > 1 ? cues.concepts : [q];
     const semantic = parts.flatMap((part, partIndex) => {
@@ -937,11 +937,10 @@ async function dimensions(cube: CubeInfo, q: string, cues: Cues, signal?: AbortS
       ? children : d.members.filter((member) => member.parent_id === null).map((member) => member.id);
     const ambiguous = d.role !== "geography" && !geoRole && !rent && cues.concepts.length === 1 && matched.length > 1;
     const ids = measure.length ? measure : passengerCar ? [passengerCar.id] : broad.length ? broad
-      : breakdown.length > 1 ? breakdown : rent ? [rent.id] : semanticMembers.length > 1 ? semanticMembers.map((m) => m.id)
-      : namedMembers.length > 1 ? namedMembers.map((m) => m.id)
+      : breakdown.length > 1 ? breakdown : rent ? [rent.id] : namedMembers.length ? namedMembers.map((m) => m.id)
       : semanticMembers.length && relevant ? semanticMembers.map((m) => m.id)
-      : ambiguous ? jevMember ? [jevMember.id] : namedMembers.length ? [namedMembers[0]!.id] : relativeMembers(scores).slice(0, 1)
-      : namedMembers.length ? namedMembers.map((m) => m.id) : relevant ? relativeMembers(scores) : [];
+      : ambiguous ? jevMember ? [jevMember.id] : relativeMembers(scores).slice(0, 1)
+      : relevant ? relativeMembers(scores) : [];
     const multiple = Boolean(geoRole || geo === "listed" && ids.length > 1 || relevant && ids.length > 1);
     const fallback = DISTRIBUTION.test(q) && cube.dimensions.some((other) => DISTRIBUTION.test(other.name))
       ? distributionDefault(d, q) : d.default_member_id;
@@ -1064,7 +1063,8 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
       step(steps, "enough", "false", "rule"); return result("need_more", "rule");
     }
   }
-  q = normalizeKnownWords(q.replace(/\bcauses?\s+of\s+death\b/gi, "deaths by cause"));
+  q = normalizeKnownWords(q.replace(/\bcauses?\s+of\s+death\b/gi, "deaths by cause"))
+    .replace(/\bvs\.\s+/gi, "vs ").replace(/[.!?]+$/u, "").trim();
   const cues = parseCues(q);
   if (cues.physiographic) {
     const reason = `The ${cues.physiographic.label} does not follow province borders; no Statistics Canada table publishes it as a province group.`;
@@ -1408,9 +1408,10 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
     groups: groupScopes.get(cube.pid) ?? (cube.pid === primaryCube.pid
       ? cues.groups.filter((group) => ![...groupScopes.values()].some((assigned) => assigned.includes(group)))
       : cues.groups) } : cues;
+  const layerPart = (candidate: Candidate) => layers.length > 1 && cues.concepts.length > 1
+    ? cues.concepts.find((term, index) => coversPart(candidate, term, index)) ?? q : q;
   const layerDimensions = (candidate: Candidate, useJev: boolean) => {
-    const part = layers.length > 1 && cues.concepts.length > 1
-      ? cues.concepts.find((term, index) => coversPart(candidate, term, index)) ?? q : q;
+    const part = layerPart(candidate);
     return dimensions(candidate.cube, part, part === q ? layerCues(candidate)
       : { ...layerCues(candidate), concepts: [part] }, signal, useJev);
   };
@@ -1423,6 +1424,22 @@ async function produce(db: Db, input: string, signal?: AbortSignal): Promise<Pla
     selections = await Promise.all(layers.map((candidate) => layerDimensions(candidate, false)));
   }
   else selections = await Promise.all(layers.map((candidate) => layerDimensions(candidate, false)));
+  const unsupportedDefault = layers.find((candidate, index) => candidate.cube.dimensions.some((dimension) => {
+    if (dimension.role !== "measure" || !/\bproducts?\b/i.test(dimension.name)) return false;
+    const selection = selections[index]!.dims[String(dimension.id)];
+    if (selection?.use !== "fixed" || !("eq" in selection.members) || selection.members.eq !== dimension.default_member_id)
+      return false;
+    const fallback = dimension.members.find((member) => member.id === dimension.default_member_id);
+    if (!fallback || fallback.roles.includes("total")) return false;
+    const part = layerPart(candidate);
+    return words(part).length > 0 && !dimension.members.some((member) => matches(member.label, part) > 0 ||
+      MEMBER_TERMS.some(([re, label]) => re.test(part) && termMember(member, label, part)));
+  }));
+  if (unsupportedDefault) {
+    const reason = `The requested subject is not published in table ${unsupportedDefault.cube.pid}.`;
+    step(steps, "member_not_found", reason, "rule");
+    return result("no_match", planner, undefined, [], reason);
+  }
   for (const s of selections) steps.push(...s.steps);
   {
     const geo = primary.cube.dimensions.find((d) => d.role === "geography");
