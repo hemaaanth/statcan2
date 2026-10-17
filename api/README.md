@@ -40,9 +40,7 @@ The repo-root `Dockerfile` builds the server (the API reads `api/` and `data/ref
 /data/codesets/{codeSets.json,codeSets.json.sha256}
 ```
 
-`tmp` must be writable by the `node` user (uid 1000). Leave `STATCAN_UUID` unset. Set `TYPESAFE_API_KEY` for the planner. To enable semantic candidate fallback, mount the generated identity index, set `STATCAN_EMBEDDINGS` to it, and set `OPENAI_API_KEY`.
-
-The current statcan2.ca host runs `deploy/statcan2.service` on port 3022 behind a Cloudflare Tunnel. The identity index lives outside the immutable Normalized build at `wds-full-1/retrieval/<normalized-build-id>/table-embeddings-identity.parquet`.
+`tmp` must be writable by the `node` user (uid 1000). Leave `STATCAN_UUID` unset. Set `TYPESAFE_API_KEY` and `OPENAI_API_KEY` for the planner. The Docker image includes the identity index at `/app/data/ref/table-embeddings.parquet` and sets `STATCAN_EMBEDDINGS` to it. Rebuild that file when the Normalized catalogue changes. statcan2.ca runs this image on Coolify behind a Cloudflare Tunnel.
 
 Node 26 runs the TypeScript directly; no build step. Dependencies include `hono`, `@hono/node-server`, `@duckdb/node-api`, `@modelcontextprotocol/sdk`, `zod`, `@resvg/resvg-js`, and the locally bundled Geist font files. OG cards render SVG to PNG in-process; no browser or screenshot service is needed.
 

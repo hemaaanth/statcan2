@@ -10,7 +10,8 @@ COPY data/ref /app/data/ref
 ENV NODE_ENV=production HOST=:: PORT=3000 \
     STATCAN_BUILD=/data/wds-full-1 \
     STATCAN_NORMALIZED=/data/wds-full-1/normalized/n8 \
-    STATCAN_CODESETS=/data/codesets/codeSets.json
+    STATCAN_CODESETS=/data/codesets/codeSets.json \
+    STATCAN_EMBEDDINGS=/app/data/ref/table-embeddings.parquet
 EXPOSE 3000
 USER node
 CMD ["node", "src/index.ts"]
