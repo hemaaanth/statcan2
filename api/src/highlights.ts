@@ -59,3 +59,14 @@ export async function loadHighlights(db: Db): Promise<Highlights> {
   }
   return { build_id: db.manifest.build_id, cards };
 }
+
+const cache = new WeakMap<Db, Promise<Highlights>>();
+/** loadHighlights once per database; a failed load is retried on the next call. Shared by the API and the home page. */
+export function cachedHighlights(db: Db): Promise<Highlights> {
+  let promise = cache.get(db);
+  if (!promise) {
+    promise = loadHighlights(db).catch((error) => { cache.delete(db); throw error; });
+    cache.set(db, promise);
+  }
+  return promise;
+}

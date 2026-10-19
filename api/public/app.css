@@ -58,7 +58,7 @@ main.app{display:flex;align-items:flex-start;min-height:calc(100vh - 56px);max-w
  * keeps only the independence line. Nothing draws a rule except the top bar. The blank area has an even side inset,
  * so the card or message centres on the window, not on the plot's 48/24 padding.
  */
-:is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) :is(.panels,.rail a,.rail-acts){display:none}
+:is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) :is(.panels,.rail a[data-tab],.rail-acts){display:none}
 :is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) .screen{min-height:0}
 /* Without JS the blank states still must not scroll (the panels below are hidden there). */
 body:is([data-status=idle],[data-status=need_more],[data-status=no_match]){height:100svh;overflow:hidden}
@@ -90,7 +90,7 @@ body[data-status=idle] .blank{inset:16px 24px 0 48px;align-items:stretch}
 .hl-centre{grid-column:2/4;grid-row:1/3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px 32px;text-align:center;cursor:text}
 .hl-centre:hover .hl-cta{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:4px}
 .hl-pointer{width:20px;height:34px;fill:none;stroke:var(--muted);stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round}
-.hl-cta{margin:0;max-width:440px;font:600 28px/34px var(--sans);letter-spacing:-.015em;color:var(--ink);text-wrap:balance}
+.hl-cta{margin:0;padding:0;border:0;background:none;cursor:text;max-width:440px;font:600 28px/34px var(--sans);letter-spacing:-.015em;color:var(--ink);text-wrap:balance}
 .hl-sub{margin:0;max-width:380px;font:15px/22px var(--sans);color:var(--muted);text-wrap:balance}
 /* Before the cards arrive: only the centre card, no frame and no placeholders. */
 .home.is-empty .hl-grid{grid-template-columns:1fr}
@@ -127,13 +127,14 @@ body[data-status=idle] .blank{inset:16px 24px 0 48px;align-items:stretch}
 
 /* Rail: one row of small buttons under the plot. Each opens its popover; the open one is ink-filled. */
 .rail{flex:none;position:relative;height:48px;display:flex;align-items:center;gap:6px;padding:0 24px 0 48px;border-top:0;background:#fff}
-.rail a{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--line-strong);font:500 13px/16px var(--sans);color:var(--ink);background:#fff}
-.rail a:hover{text-decoration:none;border-color:var(--ink)}
+.rail a[data-tab]{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--line-strong);font:500 13px/16px var(--sans);color:var(--ink);background:#fff}
+.rail a[data-tab]:hover{text-decoration:none;border-color:var(--ink)}
 .rail a[aria-expanded=true]{background:var(--ink);border-color:var(--ink);color:#fff}
 .rail a[aria-expanded=true] .count{color:#c9cbce}
 .rail .count{font:11px/16px var(--mono);color:var(--quiet)}
 .rail .count:empty{display:none}
 .rail-note{margin-left:auto;font:12px/16px var(--mono);color:var(--quiet)}
+.rail-note:hover{color:var(--ink)}
 /* Actions sit after the detail buttons: Screenshot (outline) and Share (ink fill, white text). A divider keeps the two groups apart. */
 .rail-acts{display:flex;gap:6px;margin-left:10px;padding-left:16px;border-left:1px solid var(--line)}
 .act{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--line-strong);background:#fff;font:500 13px/16px var(--sans);color:var(--ink)}
@@ -368,7 +369,7 @@ body[data-status=idle] .blank{inset:16px 24px 0 48px;align-items:stretch}
   .view-head{padding:12px 16px;flex-direction:column;align-items:stretch;gap:10px;min-height:0}
   #head h1{font-size:24px;line-height:30px}
   .screen{height:calc(100svh - 56px);min-height:0}.stage{flex:1;min-height:0;padding:0 8px 0 12px}
-  .rail{padding:0 8px;gap:4px;overflow-x:auto}.rail a{padding:0 8px;flex:none}
+  .rail{padding:0 8px;gap:4px;overflow-x:auto}.rail a[data-tab]{padding:0 8px;flex:none}
   .blank,:is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) .blank{inset:0 12px}
   /* Blank states: the stage takes the window under the top bar and the rail; the card stays centred. */
   :is([data-status=idle],[data-status=need_more],[data-status=no_match],[data-status=error]) .stage{height:auto}

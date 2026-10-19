@@ -292,9 +292,11 @@ export function homeHtml(highlights) {
       ${d ? `<svg class="hl-spark c${i % 10}" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><path d="${d}"/></svg>` : ""}
     </a>`;
   };
-  const centre = `<div class="hl-centre" role="button" tabindex="0" data-focus-q aria-label="Focus the search bar">
+  // The whole card focuses the search box; the button is its keyboard target. The h1 says what the site is.
+  const centre = `<div class="hl-centre" data-focus-q>
     <svg class="hl-pointer" viewBox="0 0 24 40" aria-hidden="true"><path d="M12 38V4M5 11l7-7 7 7"/></svg>
-    <p class="hl-cta">Type anything into the search bar</p>
+    <button type="button" class="hl-cta">Type anything into the search bar</button>
+    <h1 class="hl-sub">statcan(2) is a free, independent site for every Statistics Canada table.</h1>
     <p class="hl-sub">Compare places, group regions, see change over any window, or index to a year.</p>
   </div>`;
   return `<div class="home${cards.length ? "" : " is-empty"}"><div class="hl-grid">${centre}${cards.map(card).join("")}</div></div>`;

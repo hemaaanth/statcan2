@@ -8,17 +8,13 @@ import { getCube } from "./cube.ts";
 import { ViewSpec, decodeSpec } from "./spec.ts";
 import { exportHash, exportRows, quoteSql, runView, suggestViews } from "./view.ts";
 import { regions } from "./regions.ts";
-import { loadHighlights, type Highlights } from "./highlights.ts";
+import { cachedHighlights } from "./highlights.ts";
 
 export function chartRoutes({ db }: { db: Db }) {
   const api = new Hono();
   const provenance = db.provenance;
   api.get("/regions", (c) => c.json({ ...provenance, regions }));
-  let highlights: Promise<Highlights> | undefined;
-  api.get("/highlights", async (c) => {
-    const cards = await (highlights ??= loadHighlights(db).catch((error) => { highlights = undefined; throw error; }));
-    return c.json(cards);
-  });
+  api.get("/highlights", async (c) => c.json(await cachedHighlights(db)));
   api.get("/cubes", async (c) => {
     const q = c.req.query("q") ?? "";
     const rawLimit = Number(c.req.query("limit") ?? 25);

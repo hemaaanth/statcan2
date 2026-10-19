@@ -131,9 +131,8 @@ async function loadHighlights() {
   }
 }
 if (!state.highlights) loadHighlights().then((h) => { state.highlights = h; if (document.body.dataset.status === "idle") paint(); });
-// The centre card points at the search: a click (or Enter / Space on it) focuses the box.
+// The centre card points at the search: a click on it (or Enter / Space on its button) focuses the box.
 els.blank.addEventListener("click", (e) => { if (e.target.closest("[data-focus-q]")) els.q.focus(); });
-els.blank.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.closest("[data-focus-q]")) { e.preventDefault(); els.q.focus(); } });
 
 // ---------------------------------------------------------------- builder edits → view
 

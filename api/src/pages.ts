@@ -5,7 +5,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
-import { parts } from "../public/render.js";
+import { parts, periodLabel } from "../public/render.js";
 import type { Config } from "./api.ts";
 import { planQuery } from "./planner.ts";
 import { decodeSpec, type PlanResult, type ViewResult, type ViewSpec } from "./spec.ts";
@@ -13,6 +13,7 @@ import { runView } from "./view.ts";
 import { publicOrigin } from "./config.ts";
 import { mcpTools } from "./mcp_tools.ts";
 import { clientIcons } from "./client_icons.ts";
+import { cachedHighlights, type Highlights } from "./highlights.ts";
 
 // Pinned Highcharts build from a CDN; non-commercial licence applies (personal, non-profit project). SRI protects against CDN tampering.
 const HIGHCHARTS = { src: "https://cdn.jsdelivr.net/npm/highcharts@13.1.1/highcharts.js", integrity: "sha384-FXT8Mj1JsVEsCNEB3qjrU1JPYJ94Ku7uMe0eopjumL2jEkPl1O9YeAZJn+qsOFVW" };
@@ -40,7 +41,7 @@ function appHeader(q = "", active = "") {
   return html`<header class="topbar">
     ${logo()}
     <form class="ask" method="get" action="/" role="search"><span class="prompt">›</span><input name="q" value="${q}" placeholder="What do you want to understand?" aria-label="What do you want to understand?" autocomplete="off" spellcheck="false"></form>
-    <nav><a class="${active === "api" ? "active" : ""}" href="/api">API</a><a class="${active === "mcp" ? "active" : ""}" href="/mcp">MCP</a>${DONATE}</nav>
+    <nav><a class="${active === "about" ? "active" : ""}" href="/about">About</a><a class="${active === "api" ? "active" : ""}" href="/api">API</a><a class="${active === "mcp" ? "active" : ""}" href="/mcp">MCP</a>${DONATE}</nav>
   </header>`;
 }
 
@@ -53,11 +54,21 @@ main{width:100%;margin:0}.footbar{height:48px;display:flex;align-items:center;ju
 .section-head{display:flex;align-items:baseline;gap:10px;padding-bottom:12px}.section-head h2{margin:0;font:600 17px/22px var(--sans)}.section-head .count,.count{font:12px/16px var(--mono);color:var(--quiet)}
 .note-row{display:flex;gap:16px;border-top:1px solid var(--line);padding:14px 0}.note-row .id{width:24px;color:var(--quiet);font:11px/16px var(--mono)}.note-row p{margin:0;font-size:13px;line-height:18px}
 .btn{height:32px;display:inline-flex;align-items:center;padding:0 12px;border:1px solid var(--line-strong);background:#fff;font:500 13px/16px var(--sans)}.btn.primary{background:var(--ink);border-color:var(--ink);color:#fff}
-.doc-shell{height:calc(100svh - 56px);display:grid;grid-template-rows:minmax(0,1fr) 48px;max-width:none}.doc-scroll{min-height:0;overflow:auto}.doc{width:min(960px,calc(100vw - 96px));margin:0 auto;padding:56px 0 80px}.doc-hero{padding-bottom:8px}.doc-kicker{margin:0 0 12px;color:var(--hot);font:500 12px/16px var(--mono);text-transform:uppercase;letter-spacing:.06em}.doc h1{max-width:720px;margin:0 0 16px;font:600 40px/44px var(--sans);letter-spacing:-.025em}.doc-hero>p:not(.doc-kicker){max-width:680px;margin:0 0 8px;color:var(--muted);font-size:16px;line-height:24px}.doc .base{font:12px/18px var(--mono)!important;color:var(--quiet)!important}.doc section{margin-top:48px}.doc h2{margin:0 0 18px;font:600 22px/28px var(--sans)}.doc h3{margin:0 0 8px;font:600 15px/20px var(--sans)}.doc p{margin:0 0 12px}.doc a{text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}.example{margin-top:28px}.code-block{position:relative;background:#f6f7f8;padding:16px 88px 16px 18px}.code-block pre,.response{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/18px var(--mono)}.code-block .copy{position:absolute;top:10px;right:10px;width:64px;height:28px;border:1px solid var(--line-strong);background:#fff;font:500 11px/16px var(--mono)}.response{padding:12px 18px;color:var(--muted);border:1px solid var(--line);border-top:0;background:#fff}.endpoint-group{margin-top:28px}.endpoint-group h3{padding-bottom:8px;border-bottom:1px solid var(--ink)}.endpoint-row{min-height:48px;display:grid;grid-template-columns:72px 340px minmax(0,1fr);gap:4px 16px;align-items:start;padding:12px 0;border-bottom:1px solid var(--line)}.endpoint-row .method{font:500 11px/18px var(--mono);color:var(--quiet)}.endpoint-row>code{font:12px/18px var(--mono);overflow-wrap:anywhere}.endpoint-row>span:not(.method){line-height:18px}.endpoint-row small{grid-column:3;color:var(--quiet);font:11px/16px var(--mono)}.sep{margin:0 10px;color:var(--quiet)}.doc ul{margin:0;padding-left:20px}.doc li{margin:8px 0}.tool-row{display:grid;grid-template-columns:200px minmax(0,1fr);gap:4px 20px;padding:12px 0;border-bottom:1px solid var(--line)}.tool-row:first-of-type{border-top:1px solid var(--ink)}.tool-row code{font:500 12px/18px var(--mono)}.tool-row small{grid-column:2;color:var(--quiet);font:12px/18px var(--sans)}.tool-row small code{color:var(--muted);font:500 11px/18px var(--mono)}.prompts{font-size:16px;line-height:24px}.client-row{display:grid;grid-template-columns:200px minmax(0,1fr);gap:4px 20px;padding:16px 0;border-bottom:1px solid var(--line)}.clients{margin-top:24px;border-top:1px solid var(--ink)}.client-row h3{display:flex;align-items:center;gap:10px;margin:0;line-height:28px}.client-row h3 svg{width:18px;height:18px;flex:none}.client-row p{margin:0 0 8px;line-height:28px}.client-row p:last-child{margin:0}
+.doc-shell{height:calc(100svh - 56px);display:grid;grid-template-rows:minmax(0,1fr) 48px;max-width:none}.doc-scroll{min-height:0;overflow:auto}.doc{width:min(960px,calc(100vw - 96px));margin:0 auto;padding:56px 0 80px}.doc-hero{padding-bottom:8px}.doc-kicker{margin:0 0 12px;color:var(--hot);font:500 12px/16px var(--mono);text-transform:uppercase;letter-spacing:.06em}.doc h1{max-width:720px;margin:0 0 16px;font:600 40px/44px var(--sans);letter-spacing:-.025em}.doc-hero>p:not(.doc-kicker){max-width:680px;margin:0 0 8px;color:var(--muted);font-size:16px;line-height:24px}.doc .base{font:12px/18px var(--mono)!important;color:var(--quiet)!important}.doc section{margin-top:48px}.doc h2{margin:0 0 18px;font:600 22px/28px var(--sans)}.doc h3{margin:0 0 8px;font:600 15px/20px var(--sans)}.doc p{margin:0 0 12px}.doc a{text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}.example{margin-top:28px}.code-block{position:relative;background:#f6f7f8;padding:16px 88px 16px 18px}.code-block pre,.response{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/18px var(--mono)}.code-block .copy{position:absolute;top:10px;right:10px;width:64px;height:28px;border:1px solid var(--line-strong);background:#fff;font:500 11px/16px var(--mono)}.response{padding:12px 18px;color:var(--muted);border:1px solid var(--line);border-top:0;background:#fff}.endpoint-group{margin-top:28px}.endpoint-group h3{padding-bottom:8px;border-bottom:1px solid var(--ink)}.endpoint-row{min-height:48px;display:grid;grid-template-columns:72px 340px minmax(0,1fr);gap:4px 16px;align-items:start;padding:12px 0;border-bottom:1px solid var(--line)}.endpoint-row .method{font:500 11px/18px var(--mono);color:var(--quiet)}.endpoint-row>code{font:12px/18px var(--mono);overflow-wrap:anywhere}.endpoint-row>span:not(.method){line-height:18px}.endpoint-row small{grid-column:3;color:var(--quiet);font:11px/16px var(--mono)}.sep{margin:0 10px;color:var(--quiet)}.prose section{max-width:680px}.doc ul{margin:0;padding-left:20px}.doc li{margin:8px 0}.tool-row{display:grid;grid-template-columns:200px minmax(0,1fr);gap:4px 20px;padding:12px 0;border-bottom:1px solid var(--line)}.tool-row:first-of-type{border-top:1px solid var(--ink)}.tool-row code{font:500 12px/18px var(--mono)}.tool-row small{grid-column:2;color:var(--quiet);font:12px/18px var(--sans)}.tool-row small code{color:var(--muted);font:500 11px/18px var(--mono)}.prompts{font-size:16px;line-height:24px}.client-row{display:grid;grid-template-columns:200px minmax(0,1fr);gap:4px 20px;padding:16px 0;border-bottom:1px solid var(--line)}.clients{margin-top:24px;border-top:1px solid var(--ink)}.client-row h3{display:flex;align-items:center;gap:10px;margin:0;line-height:28px}.client-row h3 svg{width:18px;height:18px;flex:none}.client-row p{margin:0 0 8px;line-height:28px}.client-row p:last-child{margin:0}
 @media(max-width:900px){.footbar{padding:0 16px}.doc{width:auto;padding:36px 16px 64px}.doc h1{font-size:34px;line-height:40px}.endpoint-row{grid-template-columns:64px minmax(0,1fr)}.endpoint-row>span:not(.method),.endpoint-row small{grid-column:2}.tool-row{grid-template-columns:1fr}.tool-row small{grid-column:1}}
 `;
 
-type PageMeta = { title: string; description: string; image: string; url: string };
+/** What the site is, in one sentence: the home page's description and the opening line of /about and llms.txt. */
+const DEFINITION = "statcan(2) is a free, independent website, API and MCP server for every Statistics Canada table. Search in plain words, chart and compare places, then download, cite or query the data as published.";
+const OPEN_LICENCE = "https://www.statcan.gc.ca/en/terms-conditions/open-licence";
+/** The day /about's copy last changed. Bump it with any edit to that page. */
+const ABOUT_EDITED = "2026-10-19";
+const officialTable = (pid: string) => `https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=${pid}01`;
+/** "2026-09-30T18:20:41Z" → "30 Sep 2026". */
+const day = (iso: string) => periodLabel(iso.slice(0, 10), iso.slice(0, 10), "day");
+
+/** `ld`: schema.org objects for search and answer engines, written as JSON-LD in the head. */
+type PageMeta = { title: string; description: string; image: string; url: string; ld?: object[] };
 function metadata(c: Context, title: string, description: string, image: string): PageMeta {
   const request = new URL(c.req.url);
   const origin = publicOrigin();
@@ -74,26 +85,27 @@ function metaTags(meta: PageMeta) {
     <meta property="og:image:height" content="630"><meta property="og:url" content="${meta.url}">
     <meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${meta.title}"><meta name="twitter:description" content="${meta.description}">
-    <meta name="twitter:image" content="${meta.image}">`;
+    <meta name="twitter:image" content="${meta.image}">${(meta.ld ?? []).map((data) =>
+      raw(`<script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", ...data }).replaceAll("<", "\\u003c")}</script>`))}`;
 }
 
 function layout(title: string, meta: PageMeta, body: HtmlEscapedString | Promise<HtmlEscapedString>, q = "", pageClass = "page", active = "") {
-  const footer = active === "mcp" ? "Streamable HTTP · /api/mcp" : "JSON over HTTPS · /api/v1";
+  const footer = active === "mcp" ? "Streamable HTTP · /api/mcp" : active === "api" ? "JSON over HTTPS · /api/v1" : "";
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} · statcan2</title>${metaTags(meta)}<style>${raw(CSS)}</style><link rel="stylesheet" href="${ASSETS}/topbar.css"><script type="module" src="${ASSETS}/docs.js"></script></head>
-<body class="doc-body">${appHeader(q, active)}<main class="${pageClass}"><div class="doc-scroll">${body}</div><footer class="footbar"><span>Independent. Not affiliated with Statistics Canada.</span><span>${footer}</span></footer></main></body></html>`;
+<body class="doc-body">${appHeader(q, active)}<main class="${pageClass}"><div class="doc-scroll">${body}</div><footer class="footbar"><a href="/about">Independent. Not affiliated with Statistics Canada.</a><span>${footer}</span></footer></main></body></html>`;
 }
 
 
 
 /** What the app screen needs; embedded as JSON so app.js starts from the server's answer. */
-type AppState = { q: string; plan: PlanResult | null; spec: ViewSpec | null; view: ViewResult | null; edited: boolean; error: string | null };
+type AppState = { q: string; plan: PlanResult | null; spec: ViewSpec | null; view: ViewResult | null; edited: boolean; error: string | null; highlights?: Highlights | null };
 const TABS = [["table", "Table"], ["notes", "Notes"], ["download", "Download"], ["cite", "Cite"], ["api", "API"]] as const;
 
 /** The one app screen: question box, chart header band, plot, panel tabs, and the (collapsed) chart builder. */
 function appPage(state: AppState, meta: PageMeta) {
   const p = parts(state);
-  const title = p.status === "ok" && state.view ? state.view.title : state.q.trim() || "Home";
+  const title = p.status === "ok" && state.view ? state.view.title : state.q.trim() || "Search, chart and download Statistics Canada data";
   const count = (k: string) => k === "notes" ? p.counts.notes || "" : k === "cite" && p.counts.cite > 1 ? p.counts.cite : "";
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} · statcan2</title>${metaTags(meta)}<script>document.documentElement.classList.add("js")</script>
@@ -102,7 +114,7 @@ function appPage(state: AppState, meta: PageMeta) {
 <body class="app-body" data-status="${p.status}">
 <header class="topbar app-top">${logo()}
   <form class="ask" method="get" action="/" role="search"><span class="prompt">›</span><input id="q" name="q" value="${state.q}" placeholder="What do you want to understand?" aria-label="What do you want to understand?" autocomplete="off" spellcheck="false"><div class="progress" aria-hidden="true"></div></form>
-  <nav><a href="/api">API</a><a href="/mcp">MCP</a>${DONATE}</nav>
+  <nav><a href="/about">About</a><a href="/api">API</a><a href="/mcp">MCP</a>${DONATE}</nav>
 </header>
 <main class="app">
   <div class="app-main">
@@ -112,9 +124,9 @@ function appPage(state: AppState, meta: PageMeta) {
     <div class="stage"><div id="chart" class="chart-box"></div><div id="blank" class="blank" ${p.blank ? "" : "hidden"} aria-live="polite">${raw(p.blank)}</div></div>
     <nav id="rail" class="rail" aria-label="Chart details">${TABS.map(([k, l]) => html`<a href="#p-${k}" data-tab="${k}" role="button" aria-expanded="false" aria-controls="p-${k}">${l}<span class="count">${count(k)}</span></a>`)}
       <span class="rail-acts"><button type="button" class="act" id="act-png" title="Download a PNG of this chart"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h2.5l1-1.5h5l1 1.5H14v8H2z"/><circle cx="8" cy="8.75" r="2.25"/></svg>Screenshot</button><button type="button" class="act primary" id="act-share" title="Copy a link to this exact chart"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8M5 5l3-3 3 3M3 9v5h10V9"/></svg>Share</button></span>
-      <span class="rail-note">Independent. Not affiliated with Statistics Canada.</span></nav>
+      <a class="rail-note" href="/about">Independent. Not affiliated with Statistics Canada.</a></nav>
     </div>
-    <div class="panels">${TABS.map(([k, l]) => html`<section id="p-${k}" class="panel pop-${k}" role="dialog" aria-label="${l}" tabindex="-1"><h2 class="panel-title">${l}</h2><a class="panel-close" href="#" data-close aria-label="Close ${l}">×</a><div class="panel-body">${raw(p[k])}</div></section>`)}</div>
+    <!--email_off--><div class="panels">${TABS.map(([k, l]) => html`<section id="p-${k}" class="panel pop-${k}" role="dialog" aria-label="${l}" tabindex="-1"><h2 class="panel-title">${l}</h2><a class="panel-close" href="#" data-close aria-label="Close ${l}">×</a><div class="panel-body">${raw(p[k])}</div></section>`)}</div><!--email_on-->
   </div>
   <aside id="builder" class="builder" hidden aria-labelledby="builder-title"></aside>
 </main>
@@ -169,7 +181,7 @@ export function pageRoutes({ db }: Config) {
   ];
   const codeBlock = (code: string, label = "Copy") => html`<div class="code-block"><button type="button" class="copy" data-copy>${label}</button><pre><code>${code}</code></pre></div>`;
   const apiPage = () => html`<article class="doc">
-    <header class="doc-hero"><p class="doc-kicker">API</p><h1>Statistics Canada data, ready to use.</h1>
+    <header class="doc-hero"><p class="doc-kicker">API</p><h1>A free JSON API for Statistics Canada data.</h1>
       <p>Free, read-only JSON over HTTPS for every Statistics Canada table, with values as published.</p>
       <p class="base">Base URL <code>https://statcan2.ca/api</code></p></header>
     <section id="quick-start"><h2>Quick start</h2>
@@ -216,7 +228,7 @@ export function pageRoutes({ db }: Config) {
     return out;
   };
   const mcpPage = () => html`<article class="doc">
-    <header class="doc-hero"><p class="doc-kicker">MCP</p><h1>Give an AI agent the tables.</h1>
+    <header class="doc-hero"><p class="doc-kicker">MCP</p><h1>An MCP server for Statistics Canada data.</h1>
       <p>Connect an AI agent to every Statistics Canada table.</p></header>
     <section id="connect"><h2>Connect</h2>
       <p>Every client uses one server URL. No key or sign-in is needed.</p>${codeBlock(MCP_URL)}
@@ -228,6 +240,84 @@ export function pageRoutes({ db }: Config) {
     </section>
     <section id="prompts"><h2>Example prompts</h2><ul class="prompts"><li>Compare food and gasoline inflation in Ontario over the past five years.</li><li>Show unemployment rates for the Prairies and Atlantic Canada.</li><li>Which Statistics Canada tables cover housing in Toronto?</li></ul></section>
   </article>`;
+
+  // Facts for /about and llms.txt, from the build. `captured` is the newest Statistics Canada capture in it.
+  const tableCount = (db.manifest.summary.ok ?? 0).toLocaleString("en-CA");
+  const catalogueCount = db.info.size.toLocaleString("en-CA");
+  const captured = day(Object.values(db.manifest.tables).map((t) => t.source_captured_at_utc ?? "").sort().at(-1) || db.manifest.built_at_utc);
+  // /about's dates: first publication, and the later of its last copy edit and the data build.
+  const published = day("2026-09-30"), updated = day([ABOUT_EDITED, db.normalized.built_at_utc].sort().at(-1)!);
+  const which = `It depends on the job. Use statcan(2) to find a table by asking in plain words, chart it, compare provinces or cities, or pull the same numbers into a spreadsheet, code or an AI agent. Values stay exactly as Statistics Canada published them, and every chart links to its source table. Use statcan.gc.ca for official releases in The Daily, analysis and methodology, numbers released after our last capture on ${captured}, and anything you must cite as the official source.`;
+  const aboutPage = () => html`<article class="doc prose">
+    <header class="doc-hero"><p class="doc-kicker">About</p><h1>statcan(2) is a free, independent site for Statistics Canada data.</h1>
+      <p>It is for researchers, journalists, students and developers. Search every published table in plain words, chart it and compare places. Then download it, cite it, or query it through an API or an MCP server for AI agents.</p>
+      <p class="base">Published ${published} · Updated ${updated}</p></header>
+    <section id="which"><h2>Should I use statcan(2) or the Statistics Canada website?</h2><p>${which}</p></section>
+    <section id="coverage"><h2>What does it cover?</h2><ul>
+      <li>${tableCount} tables you can chart and query, out of ${catalogueCount} in Statistics Canada's catalogue, as of ${captured}.</li>
+      <li>Tables from Statistics Canada's Web Data Service and the 2021 Census.</li>
+      <li>Values, status flags and footnotes stay as published. A blank value is not zero.</li>
+      <li>The data is a snapshot. New Statistics Canada releases appear here after the next capture.</li></ul></section>
+    <section id="use"><h2>What can I do with it?</h2><ul>
+      <li><a href="/">Search</a> in plain words, for example <a href="/?q=unemployment%20rate%20in%20Alberta">unemployment rate in Alberta</a>, and get a chart.</li>
+      <li>Compare places, group regions, see change over any window, or index to a year.</li>
+      <li>Open the table, notes and citation for any chart. Download CSV, Parquet or the original Statistics Canada ZIP.</li>
+      <li>Use the free <a href="/api">JSON API</a>, or connect an AI agent through the <a href="/mcp">MCP server</a>. No key or sign-in is needed.</li></ul></section>
+    <section id="who"><h2>Who runs it?</h2>
+      <p>statcan(2) is an independent, open-source project. It is not affiliated with or endorsed by Statistics Canada. The code is on <a href="https://github.com/hemaaanth/statcan2">GitHub</a>. You can support it on <a href="https://buymeacoffee.com/statcan2">Buy Me a Coffee</a>.</p>
+      <p>Source: Statistics Canada. The data is used under the <a href="${OPEN_LICENCE}">Statistics Canada Open Licence</a>.</p></section>
+  </article>`;
+  const faq = (pairs: [string, string][]) => ({ "@type": "FAQPage", mainEntity: pairs.map(([name, text]) =>
+    ({ "@type": "Question", name, acceptedAnswer: { "@type": "Answer", text } })) });
+  site.get("/about", (c) => {
+    const meta = metadata(c, "About · statcan2", DEFINITION, "/og/text.png?title=About");
+    meta.ld = [faq([["What is statcan(2)?", DEFINITION], ["Should I use statcan(2) or the Statistics Canada website?", which],
+      ["Is statcan(2) affiliated with Statistics Canada?", "No. statcan(2) is an independent, open-source project. It is not affiliated with or endorsed by Statistics Canada."]])];
+    return c.html(layout("About", meta, aboutPage(), "", "doc-shell", "about"));
+  });
+
+  // Crawlers: allow everything except bulk file downloads. Content-Signal is Cloudflare's robots.txt extension.
+  const AGENTS = ["*", "meta-webindexer", "OAI-SearchBot", "ChatGPT-User", "Claude-SearchBot", "Claude-User", "PerplexityBot", "Perplexity-User", "Googlebot", "Bingbot"];
+  site.get("/robots.txt", (c) => c.text(`${AGENTS.map((a) => `User-agent: ${a}`).join("\n")}
+Content-Signal: search=yes, ai-input=yes
+Allow: /
+Disallow: /api/v1/view.parquet
+Disallow: /api/v1/view.csv
+Disallow: /api/v1/tables/*/observations.parquet
+Disallow: /api/v1/tables/*/source.zip
+
+Sitemap: ${publicOrigin()}/sitemap.xml
+`));
+  // The pages, and the home page's headline charts (server-rendered with their data tables).
+  site.get("/sitemap.xml", async (c) => {
+    const origin = publicOrigin();
+    const cards = (await cachedHighlights(db).catch(() => null))?.cards ?? [];
+    const urls = ["/", "/about", "/api", "/mcp", ...cards.map((card) => `/?q=${encodeURIComponent(card.q)}&s=${card.s}`)];
+    c.header("Content-Type", "application/xml; charset=utf-8");
+    return c.body(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.map((u) => `<url><loc>${origin}${u.replaceAll("&", "&amp;")}</loc></url>`).join("\n")}
+</urlset>
+`);
+  });
+  // llms.txt: a plain-text map of the site for AI agents (https://llmstxt.org).
+  site.get("/llms.txt", (c) => {
+    const origin = publicOrigin();
+    return c.text(`# statcan(2)
+
+> ${DEFINITION}
+
+Independent. Not affiliated with Statistics Canada. Values stay as published. ${tableCount} tables you can chart and query, as of ${captured}.
+
+## Use it
+
+- [Search and chart](${origin}/?q=unemployment%20rate%20in%20Canada): put a question in plain words in \`q\`.
+- [JSON API](${origin}/api): free and read-only. No key.
+- [OpenAPI document](${origin}/api/v1/openapi.json): every API route.
+- [MCP server](${origin}/mcp): Streamable HTTP at ${origin}/api/mcp. No key.
+- [About](${origin}/about): what the site covers, and when to use Statistics Canada's own site instead.
+`);
+  });
 
   site.get("/", async (c) => {
     const q = c.req.query("q") ?? "";
@@ -248,11 +338,23 @@ export function pageRoutes({ db }: Config) {
       if (outcome.kind === "ok") state.view = outcome.result;
       else state.error = outcome.error;
     }
+    // The home cards are in the HTML, so the numbers are readable without JavaScript. Failing that, app.js fetches them.
+    if (!q.trim() && !s) state.highlights = await cachedHighlights(db).catch(() => null);
     // app.js rewrites a `q`-only URL to `?q=…&s=<resolved spec>` on load, so the link in the bar is exact from then on.
     const meta = metadata(c, s && state.view ? state.view.title : q.trim() || "statcan(2)",
       s && state.view ? [state.view.subtitle, state.view.sources.map((source) => `Statistics Canada ${source.table_number}`).join(", "),
-        state.view.gap_note].filter(Boolean).join(" · ") : "Explore and chart published Statistics Canada data.",
+        state.view.gap_note].filter(Boolean).join(" · ") : DEFINITION,
       s && state.view ? `/og/chart.png?s=${encodeURIComponent(s)}` : "/og/site.png");
+    const view = state.view;
+    meta.ld = view ? [{ "@type": "Dataset", name: view.title, url: meta.url, isAccessibleForFree: true, license: OPEN_LICENCE,
+      description: `${view.title}: ${[view.subtitle, ...view.sources.map((source) => `Statistics Canada table ${source.table_number}, ${source.title}`)].join(". ")}.`,
+      creator: { "@type": "Organization", name: "Statistics Canada", url: "https://www.statcan.gc.ca" },
+      isBasedOn: view.sources.map((source) => officialTable(source.pid)),
+      ...(view.period.from && view.period.to ? { temporalCoverage: `${view.period.from}/${view.period.to}` } : {}),
+      distribution: [{ "@type": "DataDownload", encodingFormat: "text/csv", contentUrl: view.links.csv },
+        { "@type": "DataDownload", encodingFormat: "application/vnd.apache.parquet", contentUrl: view.links.parquet }] }]
+      : !q.trim() && !s ? [{ "@type": "WebSite", name: "statcan(2)", alternateName: "statcan2", url: `${origin}/`, description: DEFINITION,
+        potentialAction: { "@type": "SearchAction", target: `${origin}/?q={search_term_string}`, "query-input": "required name=search_term_string" } }] : [];
     return c.html(appPage(state, meta), state.error && state.edited ? 400 : 200);
   });
 

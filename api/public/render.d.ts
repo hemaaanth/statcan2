@@ -1,7 +1,8 @@
 // Types for the parts of render.js that pages.ts uses on the server.
 import type { PlanResult, ViewResult, ViewSpec } from "../src/spec.ts";
+import type { Highlights } from "../src/highlights.ts";
 
-export interface RenderState { q: string; plan: PlanResult | null; spec: ViewSpec | null; view: ViewResult | null; error: string | null }
+export interface RenderState { q: string; plan: PlanResult | null; spec: ViewSpec | null; view: ViewResult | null; error: string | null; highlights?: Highlights | null }
 export interface Parts {
   status: "idle" | "need_more" | "no_match" | "ok" | "error";
   head: string; blank: string; table: string; notes: string; download: string; cite: string; api: string;
@@ -14,3 +15,5 @@ export function statcanZipUrl(pid: string): string;
 export function grainOf(view: Pick<ViewResult, "x" | "series">): "category" | "day" | "week" | "month" | "quarter" | "half" | "year";
 /** Human-readable span used by the chart footer and subtitle. */
 export function periodText(view: Pick<ViewResult, "period" | "sources" | "x" | "series">): string;
+/** A period as people read it, at one grain: "Aug 2026", "Q2 2026", "1 Jul 2026". */
+export function periodLabel(ref: string, start: string, grain: string): string;
