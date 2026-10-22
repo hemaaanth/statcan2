@@ -58,14 +58,14 @@ export async function renderPng(view: ViewResult) {
         (async () => {
           const page = await context.newPage();
           const files = await assets;
-          const html = `<!doctype html><style data-export-fonts>${await fonts}</style><style>:root{--sans:Geist;--mono:'Geist Mono';--grid:${COLORS.grid};--muted:${COLORS.muted};--quiet:${COLORS.quiet};--ink:${COLORS.ink};--band:#f4f5f6;${COLORS.palette.map((color: string, i: number) => `--c${i}:${color}`).join(";")}}</style><script src="/highcharts.js"></script><script type="module">import {chartPng} from '/chart.js';window.renderChart=async(view)=>{const blob=await chartPng(view);return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(blob)})}</script>`;
+          const html = `<!doctype html><meta charset="utf-8"><style data-export-fonts>${await fonts}</style><style>:root{--sans:Geist;--mono:'Geist Mono';--grid:${COLORS.grid};--muted:${COLORS.muted};--quiet:${COLORS.quiet};--ink:${COLORS.ink};--band:#f4f5f6;${COLORS.palette.map((color: string, i: number) => `--c${i}:${color}`).join(";")}}</style><script src="/highcharts.js"></script><script type="module">import {chartPng} from '/chart.js';window.renderChart=async(view)=>{const blob=await chartPng(view);return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(blob)})}</script>`;
           await context.route("**/*", async (route) => {
             const url = new URL(route.request().url());
             if (url.origin !== ORIGIN) return route.abort();
-            if (url.pathname === "/") return route.fulfill({ contentType: "text/html", body: html });
+            if (url.pathname === "/") return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
             const body = files.get(url.pathname);
             if (!body) return route.abort();
-            return route.fulfill({ contentType: "application/javascript", body });
+            return route.fulfill({ contentType: "application/javascript; charset=utf-8", body });
           });
           await page.goto(ORIGIN, { waitUntil: "load", timeout: TIMEOUT });
           await page.waitForFunction("typeof window.renderChart === 'function'", { timeout: TIMEOUT });
