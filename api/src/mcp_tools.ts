@@ -3,7 +3,7 @@ import { z } from "zod";
 import { publicOrigin } from "./config.ts";
 import { MAX_DIMS, MAX_LIMIT, MAX_SERIES, type Db, type ObservationFilter } from "./db.ts";
 import { getCube } from "./cube.ts";
-import { ViewSpec } from "./spec.ts";
+import { ViewSpec, encodeSpec } from "./spec.ts";
 import { runView } from "./view.ts";
 import { planQuery } from "./planner.ts";
 
@@ -20,6 +20,7 @@ export const mcpTools = [
   { name: "get_observations", description: `Get observation rows for a filter, with member labels, place_id for dimension 1, unit_family, and period_start, period_end, period_kind. Values are the raw published strings: value, status, symbol, ref_date. value_num is derived, and status_en and symbol_en explain the codes. Page with limit (max ${MAX_LIMIT}) and offset; total counts every matching row. ${FILTERS} ${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`, args: ["pid", "from", "to", "vector", ...Array.from({ length: MAX_DIMS }, (_, i) => `m${i + 1}`), "limit", "offset"] },
   { name: "get_cube", description: `Get a chartable table's dimensions, member IDs, roles, defaults, units, and period range. ${NOT_OFFICIAL}`, args: ["pid"] },
   { name: "run_view", description: `Run a chart spec across table layers. Returns resolved selections, plotted values, sources, and notes. ${NOT_OFFICIAL} ${BLANK_NOT_ZERO}`, args: ["spec"] },
+  { name: "render_chart", description: `Render a chart spec as a 3200×1800 sharing PNG through the PNG API. Returns image content, download and chart URLs, and the API data build IDs. Use plan_chart first to turn a question into a spec. ${NOT_OFFICIAL}`, args: ["spec"] },
   { name: "plan_chart", description: `Turn a question into an editable chart spec using the planner. A fragment returns need_more; an unrelated query returns no_match. ${NOT_OFFICIAL}`, args: ["q"] },
 ];
 
@@ -40,7 +41,14 @@ function toFilter(args: Record<string, unknown>): ObservationFilter {
   };
 }
 
-export function createMcpServer(db: Db) {
+export type ImageRequest = (spec: ViewSpec) => Promise<Response>;
+
+/** Stdio can target a local API; remote MCP dispatches to its own API handler. */
+const requestImage: ImageRequest = (spec) => fetch(`${(process.env.STATCAN_API_ORIGIN || publicOrigin()).replace(/\/+$/, "")}/api/v1/view.png`, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec), signal: AbortSignal.timeout(45_000), redirect: "error",
+});
+
+export function createMcpServer(db: Db, imageRequest: ImageRequest = requestImage) {
 const buildId = db.manifest.build_id;
 function ok(data: Record<string, unknown>) {
   const body = { ...db.provenance, ...data };
@@ -169,8 +177,26 @@ server.registerTool("run_view", {
   })) });
 });
 
-server.registerTool("plan_chart", {
+server.registerTool("render_chart", {
   description: mcpTools[8].description,
+  inputSchema: { spec: ViewSpec },
+  annotations: { title: "Render chart image", ...readOnly },
+}, async ({ spec }) => {
+  try {
+    const response = await imageRequest(spec);
+    if (!response.ok) return fail(`PNG API returned ${response.status}: ${(await response.text()).slice(0, 2000)}`);
+    if (!response.headers.get("Content-Type")?.startsWith("image/png")) return fail("PNG API did not return an image");
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const origin = (process.env.STATCAN_API_ORIGIN || publicOrigin()).replace(/\/+$/, "");
+    const encoded = encodeSpec(spec);
+    const metadata = { build_id: response.headers.get("X-Statcan-Build"), normalized_build_id: response.headers.get("X-Statcan-Normalized-Build"),
+      width: 3200, height: 1800, url: response.headers.get("Content-Location") || `${origin}/api/v1/view.png?s=${encoded}`, page: `${origin}/?s=${encoded}`, note: NOT_OFFICIAL };
+    return { content: [{ type: "text" as const, text: JSON.stringify(metadata) }, { type: "image" as const, mimeType: "image/png", data: bytes.toString("base64") }], structuredContent: metadata };
+  } catch (error) { return fail(`PNG API request failed: ${error instanceof Error ? error.message : "unknown error"}`); }
+});
+
+server.registerTool("plan_chart", {
+  description: mcpTools[9].description,
   inputSchema: { q: z.string().min(1) },
   annotations: { title: "Plan chart", ...readOnly },
 }, async ({ q }) => ok({ ...await planQuery(db, q), note: NOT_OFFICIAL }));

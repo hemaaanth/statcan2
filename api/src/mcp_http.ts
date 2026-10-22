@@ -1,13 +1,13 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Hono } from "hono";
 import type { Db } from "./db.ts";
-import { createMcpServer } from "./mcp_tools.ts";
+import { createMcpServer, type ImageRequest } from "./mcp_tools.ts";
 
 /** Each POST owns its server and transport; no session or build state is stored per client. */
-export function mcpRoutes(db: Db) {
+export function mcpRoutes(db: Db, imageRequest?: ImageRequest) {
   const api = new Hono();
   api.post("/mcp", async (c) => {
-    const server = createMcpServer(db);
+    const server = createMcpServer(db, imageRequest);
     const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
     await server.connect(transport);
     try {

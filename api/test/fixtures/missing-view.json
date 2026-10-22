@@ -1,0 +1,373 @@
+{
+  "build_id": "wds-full-1+census-full-1",
+  "normalized_build_id": "n8",
+  "spec": {
+    "v": 1,
+    "layers": [
+      {
+        "pid": "18100004",
+        "dims": {
+          "1": {
+            "use": "series",
+            "members": {
+              "in": [
+                25,
+                23
+              ]
+            }
+          },
+          "2": {
+            "use": "fixed",
+            "members": {
+              "eq": 3
+            }
+          }
+        }
+      }
+    ],
+    "time": {
+      "preset": "1Y"
+    },
+    "transform": "level",
+    "chart": {
+      "type": "line"
+    }
+  },
+  "title": "Food: Calgary vs Alberta",
+  "subtitle": "Sep 2025 – Aug 2026 · 2002=100",
+  "gap_note": "Calgary Food is not published by Statistics Canada.",
+  "gap_parts": {
+    "unpublished": "Calgary Food is not published by Statistics Canada.",
+    "time": null
+  },
+  "index_note": null,
+  "x": {
+    "kind": "time"
+  },
+  "axes": [
+    {
+      "unit": "2002=100",
+      "scale": "units",
+      "unit_family": "index"
+    }
+  ],
+  "series": [
+    {
+      "key": "L0:1=25",
+      "layer": 0,
+      "pid": "18100004",
+      "name": "Calgary, Alberta",
+      "coordinate": [
+        {
+          "dimension_id": 1,
+          "dimension": "Geography",
+          "member_ids": [
+            25
+          ],
+          "label": "Calgary, Alberta"
+        },
+        {
+          "dimension_id": 2,
+          "dimension": "Products and product groups",
+          "member_ids": [
+            3
+          ],
+          "label": "Food"
+        }
+      ],
+      "kind": "observed",
+      "group_method": null,
+      "group_members": [],
+      "vectors": [],
+      "unit": "2002=100",
+      "scale": "units",
+      "unit_family": "index",
+      "axis": 0,
+      "color": 0,
+      "hidden": false,
+      "points": [
+        [
+          "2025-09",
+          "2025-09-01",
+          null,
+          ""
+        ],
+        [
+          "2025-10",
+          "2025-10-01",
+          null,
+          ""
+        ],
+        [
+          "2025-11",
+          "2025-11-01",
+          null,
+          ""
+        ],
+        [
+          "2025-12",
+          "2025-12-01",
+          null,
+          ""
+        ],
+        [
+          "2026-01",
+          "2026-01-01",
+          null,
+          ""
+        ],
+        [
+          "2026-02",
+          "2026-02-01",
+          null,
+          ""
+        ],
+        [
+          "2026-03",
+          "2026-03-01",
+          null,
+          ""
+        ],
+        [
+          "2026-04",
+          "2026-04-01",
+          null,
+          ""
+        ],
+        [
+          "2026-05",
+          "2026-05-01",
+          null,
+          ""
+        ],
+        [
+          "2026-06",
+          "2026-06-01",
+          null,
+          ""
+        ],
+        [
+          "2026-07",
+          "2026-07-01",
+          null,
+          ""
+        ],
+        [
+          "2026-08",
+          "2026-08-01",
+          null,
+          ""
+        ]
+      ],
+      "gaps": [],
+      "coverage": {
+        "first": null,
+        "last": null
+      },
+      "unpublished": true
+    },
+    {
+      "key": "L0:1=23",
+      "layer": 0,
+      "pid": "18100004",
+      "name": "Alberta",
+      "coordinate": [
+        {
+          "dimension_id": 1,
+          "dimension": "Geography",
+          "member_ids": [
+            23
+          ],
+          "label": "Alberta"
+        },
+        {
+          "dimension_id": 2,
+          "dimension": "Products and product groups",
+          "member_ids": [
+            3
+          ],
+          "label": "Food"
+        }
+      ],
+      "kind": "observed",
+      "group_method": null,
+      "group_members": [],
+      "vectors": [
+        "v41692328"
+      ],
+      "unit": "2002=100",
+      "scale": "units",
+      "unit_family": "index",
+      "axis": 0,
+      "color": 1,
+      "hidden": false,
+      "points": [
+        [
+          "2025-09",
+          "2025-09-01",
+          196.5,
+          ""
+        ],
+        [
+          "2025-10",
+          "2025-10-01",
+          195.7,
+          ""
+        ],
+        [
+          "2025-11",
+          "2025-11-01",
+          198.6,
+          ""
+        ],
+        [
+          "2025-12",
+          "2025-12-01",
+          198.1,
+          ""
+        ],
+        [
+          "2026-01",
+          "2026-01-01",
+          199.4,
+          ""
+        ],
+        [
+          "2026-02",
+          "2026-02-01",
+          199.8,
+          ""
+        ],
+        [
+          "2026-03",
+          "2026-03-01",
+          200,
+          ""
+        ],
+        [
+          "2026-04",
+          "2026-04-01",
+          200.2,
+          ""
+        ],
+        [
+          "2026-05",
+          "2026-05-01",
+          200.4,
+          ""
+        ],
+        [
+          "2026-06",
+          "2026-06-01",
+          201.5,
+          ""
+        ],
+        [
+          "2026-07",
+          "2026-07-01",
+          202.5,
+          ""
+        ],
+        [
+          "2026-08",
+          "2026-08-01",
+          201.9,
+          ""
+        ]
+      ],
+      "gaps": [],
+      "coverage": {
+        "first": "2025-09",
+        "last": "2026-08"
+      },
+      "unpublished": false
+    }
+  ],
+  "period": {
+    "from": "2025-09-01",
+    "to": "2026-08-01"
+  },
+  "notes": [
+    {
+      "pid": "18100004",
+      "note_id": 2,
+      "text": "The Consumer Price Index (CPI) is not a cost-of-living index. The objective behind a cost-of-living index is to measure changes in expenditures necessary for consumers to maintain a constant standard of living. The idea is that consumers would normally switch between products as the price relationship of goods changes. If, for example, consumers get the same satisfaction from drinking tea as they do from coffee, then it is possible to substitute tea for coffee if the price of tea falls relative to the price of coffee. The cheaper of the interchangeable products may be chosen. We could compute a cost-of-living index for an individual if we had complete information about that person's taste and spending habits. To do this for a large number of people, let alone the total population of Canada, is impossible. For this reason, regularly published price indexes are based on the fixed-basket concept rather than the cost-of-living concept.",
+      "scope": {
+        "kind": "table"
+      }
+    },
+    {
+      "pid": "18100004",
+      "note_id": 9,
+      "text": "This table replaces table 18-10-0008-01 which was archived with the release of April 2007 data.",
+      "scope": {
+        "kind": "table"
+      }
+    },
+    {
+      "pid": "18100004",
+      "note_id": 15,
+      "text": "The goods and services that make up the Consumer Price Index (CPI) are organized according to a hierarchical structure with the all-items CPI as the top level. Eight major components of goods and services make up the all-items CPI. They are food; shelter; household operations, furnishings and equipment; clothing and footwear; transportation; health and personal care; recreation, education and reading; and alcoholic beverages, tobacco products and recreational cannabis. These eight components are broken down into a varying number of sub-groups which are in turn broken down into other sub-groups. Indents are used to identify the components that make up each level of aggregation. For example, the eight major components appear with one indent relative to the all-items CPI to show that they are combined to obtain the all-items CPI. NOTE: Some items are recombined outside the main structure of the CPI to obtain special aggregates such as all-items excluding food and energy; energy; goods; services; or fresh fruit and vegetables. They are listed after the components of the main structure of the CPI following the last major component entitled alcoholic beverages, tobacco products and recreational cannabis.",
+      "scope": {
+        "kind": "dimension",
+        "dimension": "Products and product groups"
+      }
+    },
+    {
+      "pid": "18100004",
+      "note_id": 36,
+      "text": "From April 2020 to November 2021, and from January 2022 to February 2022, certain sub-indexes and components thereof were imputed using special approaches in either one, or more months. The affected indexes include child care services; housekeeping services; air transportation; personal care services; recreational services; travel tours; spectator entertainment; use of recreational facilities and services; beer served in licensed establishments; wine served in licensed establishments, and liquor served in licensed establishments. The details of these treatments from April 2020 to March 2021 are provided in technical supplements available through the <a href=\"https://www150.statcan.gc.ca/n1/en/catalogue/62F0014M\" rel=\"external noopener noreferrer\" target=\"_blank\">Prices Analytical Series (opens new window)</a>. Starting in April 2021, details and treatments are available upon request by contacting the <a href=\"mailto:statcan.cpddisseminationunit-dpcunitedediffusion.statcan@statcan.gc.ca\" rel=\"external noopener noreferrer\" target=\"_blank\">Consumer Prices Division (opens new window)</a>.",
+      "scope": {
+        "kind": "dimension",
+        "dimension": "Products and product groups"
+      }
+    },
+    {
+      "pid": "18100004",
+      "note_id": 11,
+      "text": "With the introduction of the 1992 basket in January 1995, emphasis was shifted from city data to provincial data. City all-items series were continued since many users had come to rely on this service, but the method of calculation was changed. Shelter indexes are calculated for each city. This recognizes the importance of shelter in the basket, the significant and persistent differences in price movements between cities, and the availability of local data. For the other seven major components, the movement of the provincial counterpart is used except in the cases of Montréal, Toronto, and Vancouver, where a sub-provincial counterpart is used. The major components are aggregated using the city's expenditure pattern to arrive at each city's all-items index.",
+      "scope": {
+        "kind": "member",
+        "dimension": "Geography",
+        "member": "Calgary, Alberta"
+      }
+    },
+    {
+      "pid": "18100004",
+      "note_id": 17,
+      "text": "Food includes non-alcoholic beverages.",
+      "scope": {
+        "kind": "member",
+        "dimension": "Products and product groups",
+        "member": "Food"
+      }
+    }
+  ],
+  "group_notes": [],
+  "sources": [
+    {
+      "pid": "18100004",
+      "table_number": "18-10-0004-01",
+      "title": "Consumer Price Index, monthly, not seasonally adjusted",
+      "family": "wds",
+      "frequency": "Monthly",
+      "captured": "2026-09-30",
+      "url": "https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1810000401",
+      "citation": "Statistics Canada, Table 18-10-0004-01, Consumer Price Index, monthly, not seasonally adjusted, captured 2026-09-30, build wds-full-1, normalized n8; Independent copy: https://statcan2.ca/tables/18100004; Calgary, Alberta: not published for this selection",
+      "marks": [],
+      "corrections": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "no_data",
+      "message": "L0:1=25 has no published points in the window"
+    }
+  ],
+  "links": {
+    "self": "https://statcan2.ca/api/v1/view?s=eyJ2IjoxLCJsYXllcnMiOlt7InBpZCI6IjE4MTAwMDA0IiwiZGltcyI6eyIxIjp7InVzZSI6InNlcmllcyIsIm1lbWJlcnMiOnsiaW4iOlsyNSwyM119fSwiMiI6eyJ1c2UiOiJmaXhlZCIsIm1lbWJlcnMiOnsiZXEiOjN9fX19XSwidGltZSI6eyJwcmVzZXQiOiIxWSJ9LCJ0cmFuc2Zvcm0iOiJsZXZlbCIsImNoYXJ0Ijp7InR5cGUiOiJsaW5lIn19",
+    "parquet": "https://statcan2.ca/api/v1/view.parquet?s=eyJ2IjoxLCJsYXllcnMiOlt7InBpZCI6IjE4MTAwMDA0IiwiZGltcyI6eyIxIjp7InVzZSI6InNlcmllcyIsIm1lbWJlcnMiOnsiaW4iOlsyNSwyM119fSwiMiI6eyJ1c2UiOiJmaXhlZCIsIm1lbWJlcnMiOnsiZXEiOjN9fX19XSwidGltZSI6eyJwcmVzZXQiOiIxWSJ9LCJ0cmFuc2Zvcm0iOiJsZXZlbCIsImNoYXJ0Ijp7InR5cGUiOiJsaW5lIn19",
+    "csv": "https://statcan2.ca/api/v1/view.csv?s=eyJ2IjoxLCJsYXllcnMiOlt7InBpZCI6IjE4MTAwMDA0IiwiZGltcyI6eyIxIjp7InVzZSI6InNlcmllcyIsIm1lbWJlcnMiOnsiaW4iOlsyNSwyM119fSwiMiI6eyJ1c2UiOiJmaXhlZCIsIm1lbWJlcnMiOnsiZXEiOjN9fX19XSwidGltZSI6eyJwcmVzZXQiOiIxWSJ9LCJ0cmFuc2Zvcm0iOiJsZXZlbCIsImNoYXJ0Ijp7InR5cGUiOiJsaW5lIn19",
+    "page": "https://statcan2.ca/?s=eyJ2IjoxLCJsYXllcnMiOlt7InBpZCI6IjE4MTAwMDA0IiwiZGltcyI6eyIxIjp7InVzZSI6InNlcmllcyIsIm1lbWJlcnMiOnsiaW4iOlsyNSwyM119fSwiMiI6eyJ1c2UiOiJmaXhlZCIsIm1lbWJlcnMiOnsiZXEiOjN9fX19XSwidGltZSI6eyJwcmVzZXQiOiIxWSJ9LCJ0cmFuc2Zvcm0iOiJsZXZlbCIsImNoYXJ0Ijp7InR5cGUiOiJsaW5lIn19"
+  }
+}

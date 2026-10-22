@@ -17,7 +17,7 @@ let db: Db;
 before(async () => { if (mounted) ({ db } = await openFromEnv()); });
 after(() => { if (mounted) db.close(); });
 
-test("remote MCP initializes and lists the same nine tools before planning a chart", { skip: !mounted && "build is not mounted" }, async () => {
+test("remote MCP initializes and lists the same ten tools before planning a chart", { skip: !mounted && "build is not mounted" }, async () => {
   const app = new Hono();
   app.route("/api", mcpRoutes(db));
   const listener = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
@@ -30,7 +30,7 @@ test("remote MCP initializes and lists the same nine tools before planning a cha
     assert.deepEqual(tools.map(({ name }) => name), mcpTools.map(({ name }) => name));
     assert.deepEqual(tools.map(({ description }) => description), mcpTools.map(({ description }) => description));
     assert.deepEqual(tools.map(({ inputSchema }) => Object.keys(inputSchema.properties ?? {})), mcpTools.map(({ args }) => args));
-    assert.equal(tools.length, 9);
+    assert.equal(tools.length, 10);
     const response = await client.callTool({ name: "plan_chart", arguments: { q: "food price inflation" } });
     assert.equal(response.isError, undefined);
     assert.ok(response.structuredContent && typeof response.structuredContent === "object" && "status" in response.structuredContent);

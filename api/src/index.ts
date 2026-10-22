@@ -6,6 +6,7 @@ import { openFromEnv } from "./config.ts";
 import { pageRoutes } from "./pages.ts";
 import { ogRoutes } from "./og.ts";
 import { mcpRoutes } from "./mcp_http.ts";
+import { closePngRenderer } from "./png.ts";
 import { planRoutes } from "./plan.ts";
 
 const { db, captureDir } = await openFromEnv();
@@ -18,7 +19,7 @@ app.use("*", async (c, next) => {
 });
 app.route("/api/v1", apiRoutes({ db, captureDir }));
 app.route("/api/v1", chartRoutes({ db }));
-app.route("/api", mcpRoutes(db));
+app.route("/api", mcpRoutes(db, async (spec) => app.request("/api/v1/view.png", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) })));
 app.route("/api/v1", planRoutes({ db }));
 app.route("/og", ogRoutes({ db }));
 app.route("/", pageRoutes({ db, captureDir }));
@@ -30,8 +31,9 @@ app.onError((err, c) => {
 const port = Number(process.env.PORT ?? 3000);
 const server = serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "127.0.0.1" });
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
-  process.once(signal, () => {
+  process.once(signal, async () => {
     server.close();
+    await closePngRenderer();
     db.close();
     process.exit(0);
   });

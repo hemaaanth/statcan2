@@ -2,17 +2,23 @@ import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
+import { bodyLimit } from "hono/body-limit";
 import { Hono, type Context } from "hono";
 import type { Db } from "./db.ts";
 import { getCube } from "./cube.ts";
 import { ViewSpec, decodeSpec } from "./spec.ts";
 import { exportHash, exportRows, quoteSql, runView, suggestViews } from "./view.ts";
 import { regions } from "./regions.ts";
+import { renderPng, RenderBusy } from "./png.ts";
 import { cachedHighlights } from "./highlights.ts";
 
 export function chartRoutes({ db }: { db: Db }) {
   const api = new Hono();
   const provenance = db.provenance;
+  api.use("/view.png", bodyLimit({ maxSize: 64 * 1024, onError: (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json({ error: "ViewSpec exceeds 64 KiB", ...provenance }, 413);
+  } }));
   api.get("/regions", (c) => c.json({ ...provenance, regions }));
   api.get("/highlights", async (c) => c.json(await cachedHighlights(db)));
   api.get("/cubes", async (c) => {
@@ -40,13 +46,33 @@ export function chartRoutes({ db }: { db: Db }) {
       return ViewSpec.safeParse(raw);
     } catch { return ViewSpec.safeParse(null); }
   }
-  async function handle(c: Context, format?: "parquet" | "csv") {
+  async function handle(c: Context, format?: "parquet" | "csv" | "png") {
+    if (format === "png") c.header("Cache-Control", "no-store");
     const parsed = await parsedSpec(c);
     if (!parsed.success) return c.json({ error: "invalid ViewSpec", details: parsed.error.issues, ...provenance }, 400);
     const outcome = await runView(db, parsed.data);
     if (outcome.kind === "invalid") return c.json({ error: outcome.error, ...provenance }, outcome.status);
     if (!format) return c.json(outcome.result);
     const result = outcome.result;
+    if (format === "png") {
+      try {
+        const { bytes, etag } = await renderPng(result);
+        c.header("Cache-Control", "public, no-cache");
+        c.header("ETag", etag);
+        c.header("Content-Location", result.links.png);
+        c.header("X-Statcan-Build", result.build_id);
+        c.header("X-Statcan-Normalized-Build", result.normalized_build_id);
+        if (c.req.method === "GET" && c.req.header("If-None-Match")?.split(/,\s*/).some((tag) => tag === etag || tag === `W/${etag}` || tag === "*")) return c.body(null, 304);
+        c.header("Content-Type", "image/png");
+        c.header("Content-Disposition", `attachment; filename="statcan-view-${exportHash(result.spec)}.png"`);
+        return c.body(bytes as unknown as Uint8Array<ArrayBuffer>);
+      } catch (error) {
+        c.header("Cache-Control", "no-store");
+        if (error instanceof RenderBusy) { c.header("Retry-After", "2"); return c.json({ error: error.message, ...provenance }, 503); }
+        console.error("Chart image export failed", error);
+        return c.json({ error: "Chart image rendering failed; retry shortly.", ...provenance }, 503);
+      }
+    }
     const rows = exportRows(result);
     const file = path.join(db.buildDir, "tmp", `${randomUUID()}.${format}`);
     const citations = result.sources.map((s) => s.citation).join("\n");
@@ -95,7 +121,7 @@ export function chartRoutes({ db }: { db: Db }) {
   }
   api.get("/view", (c) => handle(c));
   api.post("/view", (c) => handle(c));
-  for (const format of ["parquet", "csv"] as const) {
+  for (const format of ["parquet", "csv", "png"] as const) {
     api.get(`/view.${format}`, (c) => handle(c, format));
     api.post(`/view.${format}`, (c) => handle(c, format));
   }

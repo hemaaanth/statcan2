@@ -1,0 +1,293 @@
+{
+  "build_id": "wds-full-1+census-full-1",
+  "normalized_build_id": "n8",
+  "spec": {
+    "v": 1,
+    "layers": [
+      {
+        "pid": "98100001",
+        "dims": {
+          "1": {
+            "use": "x",
+            "members": {
+              "in": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14
+              ]
+            }
+          },
+          "2": {
+            "use": "fixed",
+            "members": {
+              "eq": 1
+            }
+          }
+        }
+      }
+    ],
+    "time": {
+      "preset": "latest"
+    },
+    "transform": "level",
+    "chart": {
+      "type": "bar"
+    }
+  },
+  "title": "Population and dwelling counts by province or territory",
+  "subtitle": "Population, 2021 · 2021",
+  "gap_note": null,
+  "gap_parts": {
+    "unpublished": null,
+    "time": null
+  },
+  "index_note": null,
+  "x": {
+    "kind": "category",
+    "dimension": "Geographic name",
+    "layer": 0,
+    "at": "2021-01-01"
+  },
+  "categories": [
+    "Newfoundland and Labrador",
+    "Prince Edward Island",
+    "Nova Scotia",
+    "New Brunswick",
+    "Quebec",
+    "Ontario",
+    "Manitoba",
+    "Saskatchewan",
+    "Alberta",
+    "British Columbia",
+    "Yukon",
+    "Northwest Territories",
+    "Nunavut"
+  ],
+  "category_groups": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "category_methods": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "axes": [
+    {
+      "unit": "",
+      "scale": "units",
+      "unit_family": "other"
+    }
+  ],
+  "series": [
+    {
+      "key": "L0:",
+      "layer": 0,
+      "pid": "98100001",
+      "name": "Population, 2021",
+      "coordinate": [
+        {
+          "dimension_id": 1,
+          "dimension": "Geographic name",
+          "member_ids": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14
+          ],
+          "label": "Geographic name"
+        },
+        {
+          "dimension_id": 2,
+          "dimension": "Population and dwelling counts (11)",
+          "member_ids": [
+            1
+          ],
+          "label": "Population, 2021"
+        }
+      ],
+      "kind": "observed",
+      "group_method": null,
+      "group_members": [],
+      "vectors": [],
+      "unit": "",
+      "scale": "units",
+      "unit_family": "other",
+      "axis": 0,
+      "color": 0,
+      "hidden": false,
+      "points": [
+        [
+          "2021",
+          "2021-01-01",
+          510550,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          154331,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          969383,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          775610,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          8501833,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          14223942,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          1342153,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          1132505,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          4262635,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          5000879,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          40232,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          41070,
+          ""
+        ],
+        [
+          "2021",
+          "2021-01-01",
+          36858,
+          ""
+        ]
+      ],
+      "gaps": [],
+      "coverage": {
+        "first": "2021",
+        "last": "2021"
+      },
+      "unpublished": false
+    }
+  ],
+  "period": {
+    "from": "2021-01-01",
+    "to": "2021-01-01"
+  },
+  "notes": [
+    {
+      "pid": "98100001",
+      "note_id": 1,
+      "text": "<p><strong>Content considerations</strong></p>  <p>The 2021 Census population counts for a particular geographic area represent the number of Canadians whose usual place of residence is in that area, regardless of where they happened to be on Census Day. Also included are any Canadians who were staying in that area on Census Day and who had no usual place of residence elsewhere in Canada, as well as those considered to be non-permanent residents. For most areas, there is little difference between the number of usual residents and the number of people staying in the area on Census Day. For certain places, however, such as tourist or vacation areas, or those including large work camps, the number of people staying in that area at any particular time could significantly exceed the number of usual residents shown here. The population counts include Canadians living in other countries, but do not include foreign residents living in Canada. Given these differences, users are advised not to interpret population counts as being the number of people living in the reported dwellings.</p>  <p>The dwelling counts refer to total private dwellings and private dwellings occupied by usual residents in Canada. The census dwelling counts do not include collective dwellings, which are dwellings of a commercial, institutional or communal nature. The usual residents in collective dwellings are, however, included in the population counts.</p>  <p>Changes occur to the names, boundaries and other characteristics of geographic areas (e.g., census subdivisions may amalgamate, or there may be an annexation or a change of name or status). Since the geographic framework is used for census data collection, the geographic reference date must be set several months before the date of the census in order to have these changes made in time. For the 2021 Census, the geographic reference date was January 1, 2021.</p>  <p>Land area is the area in square kilometres of the land-based portions of standard geographic areas. The data are unofficial, and are provided for the sole purpose of calculating population density. Land area data for the standard geographic areas reflect the boundaries in effect on January 1, 2021 (the geographic reference date for the 2021 Census of Canada).</p>  <p><strong>Definitions</strong></p>  <p>The Census Dictionary is a reference document which contains detailed definitions of Census of Population concepts, universes, variables, and geographic terms, as well as historical information.</p> <p><strong>Incompletely enumerated reserves and settlements</strong></p><p>In 2021, a total of 63 census subdivisions defined as reserves and settlements were incompletely enumerated. For these reserves and settlements, dwelling enumeration was either not permitted or could not be completed because of the various reasons below.</p><p>This represents an increase compared with the 14 census subdivisions defined as reserves and settlements that were incompletely enumerated in the 2016 Census. Health and safety restrictions put in place to slow the spread of COVID-19 and natural events (including evacuations because of forest fires) contributed to the incomplete enumeration of many reserves and settlements.</p><p>The 2021 Census population and dwelling counts are not available for the 63 incompletely enumerated reserves and settlements, and are not included in 2021 Census tabulations. Data for geographic areas containing one or more of these reserves and settlements are noted accordingly. Because of the missing data, users are cautioned that—for the affected geographic areas—comparisons (e.g., percentage change) between 2016 and 2021 may not be precise. The impact of the missing data for higher-level geographic areas (Canada, provinces and territories, census metropolitan areas and census agglomerations) is usually very/ small. However, the impact can be significant for lower-level geographic areas (e.g., census divisions), where incompletely enumerated reserves and settlements account for a higher proportion of the population. This is especially true for lower-level geographic areas where a particular reserve or settlement was incompletely enumerated for the 2021 Census but enumerated for the 2016 Census and, vice versa.</p> <p><strong>Adjustment of population counts</strong></p>  <p>Statistics Canada is committed to protect the privacy of all Canadians and the confidentiality of the data they provide to us. As part of this commitment, some population counts of geographic areas are adjusted in order to ensure confidentiality.</p>  <p>Counts of the total population are rounded to a base of 5 for any dissemination block having a population of less than 15. Population counts for all standard geographic areas above the dissemination block level are derived by summing the adjusted dissemination block counts. The adjustment of dissemination block counts is controlled to ensure that the population counts for dissemination areas will always be within 5 of the actual values. The adjustment has no impact on the population counts of census divisions and large census subdivisions. Dwelling counts are not adjusted.</p>  <p><strong>Difference between census counts and population estimates</strong></p>  <p>The Census of Population is designed to conduct a complete count of the population. Inevitably, however, some individuals will not be enumerated (undercoverage), while others, usually less numerous, will be enumerated more than once (overcoverage).</p>  <p>To determine the number of people who were missed or counted more than once, Statistics Canada conducts postcensal studies of the coverage of the census population, using representative samples of the population. Results of these studies are usually available two years after Census Day. They are used, in combination with census figures and other sources, to develop the population estimates produced by Statistics Canada on a regular basis. Population estimates are used for equalization payments, to follow trends in the Canadian population on a quarterly basis and to understand the underlying components of population change (for example, births, deaths, immigrants, emigrants and non-permanent residents). Population estimates differ from census counts and are usually higher, because census counts are not adjusted for undercoverage or overcoverage.</p>",
+      "scope": {
+        "kind": "table"
+      }
+    },
+    {
+      "pid": "98100001",
+      "note_id": 2,
+      "text": "Excludes census data for one or more incompletely enumerated reserves or settlements.",
+      "scope": {
+        "kind": "member",
+        "dimension": "Geographic name",
+        "member": "Quebec"
+      }
+    }
+  ],
+  "group_notes": [],
+  "sources": [
+    {
+      "pid": "98100001",
+      "table_number": "98-10-0001-01",
+      "title": "Population and dwelling counts: Canada, provinces and territories",
+      "family": "census_2021",
+      "frequency": "Occasional",
+      "captured": "2026-09-30",
+      "url": "https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=9810000101",
+      "citation": "Statistics Canada, Table 98-10-0001-01, Population and dwelling counts: Canada, provinces and territories, captured 2026-09-30, build census-full-1, normalized n8; Independent copy: https://statcan2.ca/tables/98100001",
+      "marks": [],
+      "corrections": []
+    }
+  ],
+  "warnings": [],
+  "links": {
+    "self": "https://statcan2.ca/api/v1/view?s=eyJ2IjoxLCJsYXllcnMiOlt7InBpZCI6Ijk4MTAwMDAxIiwiZGltcyI6eyIxIjp7InVzZSI6IngiLCJtZW1iZXJzIjp7ImluIjpbMiwzLDQsNSw2LDcsOCw5LDEwLDExLDEyLDEzLDE0XX19LCIyIjp7InVzZSI6ImZpeGVkIiwibWVtYmVycyI6eyJlcSI6MX19fX1dLCJ0aW1lIjp7InByZXNldCI6ImxhdGVzdCJ9LCJ0cmFuc2Zvcm0iOiJsZXZlbCIsImNoYXJ0Ijp7InR5cGUiOiJiYXIifX0",
+    "parquet": "https://statcan2.ca/api/v1/view.parquet?s=eyJ2IjoxLCJsYXllcnMiOlt7InBpZCI6Ijk4MTAwMDAxIiwiZGltcyI6eyIxIjp7InVzZSI6IngiLCJtZW1iZXJzIjp7ImluIjpbMiwzLDQsNSw2LDcsOCw5LDEwLDExLDEyLDEzLDE0XX19LCIyIjp7InVzZSI6ImZpeGVkIiwibWVtYmVycyI6eyJlcSI6MX19fX1dLCJ0aW1lIjp7InByZXNldCI6ImxhdGVzdCJ9LCJ0cmFuc2Zvcm0iOiJsZXZlbCIsImNoYXJ0Ijp7InR5cGUiOiJiYXIifX0",
+    "csv": "https://statcan2.ca/api/v1/view.csv?s=eyJ2IjoxLCJsYXllcnMiOlt7InBpZCI6Ijk4MTAwMDAxIiwiZGltcyI6eyIxIjp7InVzZSI6IngiLCJtZW1iZXJzIjp7ImluIjpbMiwzLDQsNSw2LDcsOCw5LDEwLDExLDEyLDEzLDE0XX19LCIyIjp7InVzZSI6ImZpeGVkIiwibWVtYmVycyI6eyJlcSI6MX19fX1dLCJ0aW1lIjp7InByZXNldCI6ImxhdGVzdCJ9LCJ0cmFuc2Zvcm0iOiJsZXZlbCIsImNoYXJ0Ijp7InR5cGUiOiJiYXIifX0",
+    "page": "https://statcan2.ca/?s=eyJ2IjoxLCJsYXllcnMiOlt7InBpZCI6Ijk4MTAwMDAxIiwiZGltcyI6eyIxIjp7InVzZSI6IngiLCJtZW1iZXJzIjp7ImluIjpbMiwzLDQsNSw2LDcsOCw5LDEwLDExLDEyLDEzLDE0XX19LCIyIjp7InVzZSI6ImZpeGVkIiwibWVtYmVycyI6eyJlcSI6MX19fX1dLCJ0aW1lIjp7InByZXNldCI6ImxhdGVzdCJ9LCJ0cmFuc2Zvcm0iOiJsZXZlbCIsImNoYXJ0Ijp7InR5cGUiOiJiYXIifX0"
+  }
+}

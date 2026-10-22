@@ -15,7 +15,7 @@ The first release aims to index the full WDS table catalogue and make hundreds o
 - Understand definitions, dimensions, units, geography, time coverage, and revisions.
 - Download original files and query the data through documented APIs.
 - Keep hosting and maintenance costs small.
-- Let people connect their own tools and AI clients through an API and, eventually, MCP.
+- Let people connect their own tools and AI clients through the API and MCP, including chart PNG exports for sharing.
 
 Built-in AI chat is not a priority. This is not an official Statistics Canada service.
 

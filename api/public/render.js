@@ -510,5 +510,7 @@ export function apiHtml(view) {
   const mcp = JSON.stringify({ tool: "run_view", arguments: { spec } }, null, 2);
   const block = (title, text, link) => `<div class="api-block"><div class="api-head"><b>${title}</b>${link ? `<a class="muted" href="${esc(link)}" target="_blank" rel="noopener">Open ↗</a>` : ""}${copyBtn(text)}</div><pre>${esc(text)}</pre></div>`;
   return block("POST /api/v1/view", curl) + block("GET /api/v1/view?s=", published, `${self.pathname}${self.search}`) + block("MCP run_view", mcp) +
+    block("GET /api/v1/view.png", `${PUBLIC_ORIGIN}/api/v1/view.png?s=${encodeSpec(spec)}`, `/api/v1/view.png?s=${encodeSpec(spec)}`) +
+    block("MCP render_chart", JSON.stringify({ tool: "render_chart", arguments: { spec } }, null, 2)) +
     `<p class="api-more"><a href="/api">API reference →</a></p>`;
 }

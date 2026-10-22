@@ -40,9 +40,23 @@ The repo-root `Dockerfile` builds the server (the API reads `api/` and `data/ref
 /data/codesets/{codeSets.json,codeSets.json.sha256}
 ```
 
-`tmp` must be writable by the `node` user (uid 1000). Leave `STATCAN_UUID` unset. Set `TYPESAFE_API_KEY` and `OPENAI_API_KEY` for the planner. The Docker image includes the identity index at `/app/data/ref/table-embeddings.parquet` and sets `STATCAN_EMBEDDINGS` to it. Rebuild that file when the Normalized catalogue changes. statcan2.ca runs this image on Coolify behind a Cloudflare Tunnel.
+`tmp` must be writable by the `node` user (uid 1000). Leave `STATCAN_UUID` unset. Set `TYPESAFE_API_KEY` and `OPENAI_API_KEY` for the planner. The Docker image includes the identity index at `/app/data/ref/table-embeddings.parquet` and sets `STATCAN_EMBEDDINGS` to it. Rebuild that file when the Normalized catalogue changes. statcan2.ca runs this image on Coolify behind a Cloudflare Tunnel. Pushing to `main` does not auto-deploy; start a deployment through Coolify after pushing, then verify the public API and site.
 
-Node 26 runs the TypeScript directly; no build step. Dependencies include `hono`, `@hono/node-server`, `@duckdb/node-api`, `@modelcontextprotocol/sdk`, `zod`, `@resvg/resvg-js`, and the locally bundled Geist font files. OG cards render SVG to PNG in-process; no browser or screenshot service is needed.
+Node 26 runs the TypeScript directly; no build step. Dependencies include `hono`, `@hono/node-server`, `@duckdb/node-api`, `@modelcontextprotocol/sdk`, `zod`, `@resvg/resvg-js`, `playwright`, `highcharts`, and the locally bundled Geist font files. OG cards render SVG to PNG in-process. Sharing PNGs use bundled headless Chromium; no external screenshot service is needed.
+
+## Chart image exports
+
+`GET /api/v1/view.png?s=<base64url ViewSpec>` and `POST /api/v1/view.png` (JSON ViewSpec body) export a **3200×1800, 16:9 PNG**. This is the same renderer used by the website Screenshot button. It preserves chart types, colors, `chart.hidden`, notes and source footer. View results include `links.png`. Bodies over 64 KiB return 413. Invalid specs return 400; unknown tables or invalid selections return 404/422. Renderer overload or failure returns 503; a busy renderer includes `Retry-After: 2`.
+
+```sh
+curl --fail-with-body -X POST https://statcan2.ca/api/v1/view.png -H 'Content-Type: application/json' --data-binary @spec.json -o chart.png
+```
+
+The API runs `public/chart.js` in headless Chromium with bundled Highcharts and Geist fonts. Only packaged assets are available; the renderer cannot access the network. One browser is reused with an isolated context per image, at most two concurrent renders and a 25-second context deadline (browser startup has a separate 15-second timeout). Completed PNGs use a 64-entry, 32 MiB LRU keyed by spec and Clean/Normalized build IDs. Responses carry ETag and build headers with `Cache-Control: public, no-cache`; clients must revalidate because a spec URL follows the current data build. GET supports `If-None-Match`/304.
+
+OG cards remain separate at `/og/*`: 1200×630, SVG/resvg, generic fallback and their existing one-day cache policy.
+
+For local development, run `npx playwright install chromium` after `npm ci`; Linux may also need `npx playwright install-deps chromium`. The production Docker image installs Chromium and its OS dependencies. Highcharts uses the same non-commercial licence as the website chart.
 
 ## Data endpoints (`/api/v1`)
 
@@ -154,7 +168,7 @@ Labels come from the Normalized code-set files. The response never replaces a co
 ## Site
 
 - `/` shows pinned indicators before a question becomes a chart. The server renders the indicators into the HTML (cached once per build, shared with `/api/v1/highlights`), so crawlers see them without JavaScript. The chart's Table panel shows the selected values inline; Notes, Cite, Download, Screenshot and Share stay on the chart page.
-- `/api` documents the read-only JSON API. `/mcp` lists the nine MCP tools and the public connection URL. `/about` says what the site is, when to use statcan.gc.ca instead, and the as-of date of the data, with published and updated dates. Old `/tables/{pid}` links redirect to a chart query; old series and place pages redirect home.
+- `/api` documents the read-only JSON API. `/mcp` lists the ten MCP tools and the public connection URL. `/about` says what the site is, when to use statcan.gc.ca instead, and the as-of date of the data, with published and updated dates. Old `/tables/{pid}` links redirect to a chart query; old series and place pages redirect home.
 - `/robots.txt` allows all crawlers, names the search and AI-answer bots, and disallows the bulk download routes. `/sitemap.xml` lists the four pages and the home-page indicator charts. `/llms.txt` is a short Markdown map for AI agents. Chart pages carry `Dataset` JSON-LD, the home page `WebSite` with a search action, and `/about` `FAQPage`. Footnote panels sit inside `<!--email_off-->` so Cloudflare does not rewrite their mailto links into dead `/cdn-cgi` links.
 - `/og/site.png`, `/og/chart.png?s=<base64url ViewSpec>`, and `/og/text.png?title=...` produce 1200×630 Geist/Geist Mono PNG social cards. The site card uses the public host, a one-line description, and a faint decorative plot. The chart card uses the scaled layout, palette, note block, and source footer from `public/export-layout.js`; value-axis labels use round intervals. Mixed-frequency lines connect across periods the series does not publish, but break at a missing period on its own cadence. Direct line labels reserve enough space for the full series name. Nominal categories turn horizontal when there are more than six categories or a label exceeds 24 characters; they show the largest 20 values that fit, then a remaining count. Ordinal buckets keep published member order and all categories: columns for up to 24, horizontal bars above 24. An unpublished selection's gap note stays above the plot. A missing or invalid chart spec uses the site card. Cards use a 200-entry build-scoped in-process LRU and `Cache-Control: public, max-age=86400`. The OpenAPI document lists these root-relative paths.
 - Annual and Census chart periods display as years in the subtitle and export/OG footer, even when the stored period starts on January 1. Cite shows the source capture date as a full date, not a chart period.
@@ -176,7 +190,7 @@ The chart options are JSON in `<script type="application/json" id="chart-config"
 
 ## MCP server
 
-Public clients connect to `https://statcan2.ca/api/mcp` using stateless Streamable HTTP. POST creates a fresh server and transport per request; GET and DELETE return 405 because there is no session or server event stream. No authentication is required, and all nine tools are read-only. `src/mcp_tools.ts` exports `createMcpServer(db)` for both transports and the `mcpTools` list rendered by `/mcp`. `src/mcp.ts` remains the stdio entrypoint for local builds; it does not call HTTP. Both use the same `Db` build. Stdio needs `STATCAN_BUILD`, `STATCAN_NORMALIZED`, `STATCAN_CODESETS` and optionally `STATCAN_CAPTURE`, `STATCAN_UUID`, `PUBLIC_ORIGIN` (not `PORT`). It writes only to stderr apart from protocol messages.
+Public clients connect to `https://statcan2.ca/api/mcp` using stateless Streamable HTTP. POST creates a fresh server and transport per request; GET and DELETE return 405 because there is no session or server event stream. No authentication is required, and all ten tools are read-only. `src/mcp_tools.ts` exports `createMcpServer(db)` for both transports and the `mcpTools` list rendered by `/mcp`. `src/mcp.ts` remains the stdio entrypoint for local builds; its data tools read the local build; `render_chart` calls the PNG API at `STATCAN_API_ORIGIN` (defaults to `PUBLIC_ORIGIN`). Remote MCP invokes the same PNG API handler in-process. Data tools use the local `Db` build; image results identify the API build. Stdio needs `STATCAN_BUILD`, `STATCAN_NORMALIZED`, `STATCAN_CODESETS` and optionally `STATCAN_CAPTURE`, `STATCAN_UUID`, `PUBLIC_ORIGIN`, `STATCAN_API_ORIGIN` (not `PORT`). It writes only to stderr apart from protocol messages.
 
 | Tool | Arguments | Result |
 |---|---|---|
@@ -188,6 +202,7 @@ Public clients connect to `https://statcan2.ca/api/mcp` using stateless Streamab
 | `get_place` | `place_id` | Same as `/places/{place_id}`: place, parent, vintages, tables by subject, a `citation` for each table |
 | `get_cube` | `pid` | Chartable cube with dimension roles, member roles, defaults, and units |
 | `run_view` | `spec` (`ViewSpec`) | Resolved chart, compact points, notes, warnings, and source citations |
+| `render_chart` | `spec` (`ViewSpec`) | 3200×1800 PNG image content, download and chart URLs, and the API build IDs |
 | `plan_chart` | `q` | Planner status, suggested `ViewSpec`, and alternatives |
 
 Every result has `build_id`, `normalized_build_id`, and a `citation` such as `Statistics Canada, Table 18-10-0006-01, Consumer Price Index, monthly, seasonally adjusted, captured 2026-09-30, build wds-full-1, normalized n8`. The date is the capture date of the source ZIP. Tool descriptions say the data is not official and that a blank value is not zero. Errors come back with `isError: true` and a message.

@@ -312,7 +312,7 @@ export interface ViewResult {
     members: string[]; formula?: string; method_difference?: string }[];
   sources: ViewSource[];
   warnings: ViewWarning[];
-  links: { self: string; parquet: string; csv: string; page: string };
+  links: { self: string; parquet: string; csv: string; png: string; page: string };
 }
 
 // ---------------------------------------------------------------- planner (GET /api/v1/plan?q=)

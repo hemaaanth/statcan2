@@ -62,7 +62,7 @@ main{width:100%;margin:0}.footbar{height:48px;display:flex;align-items:center;ju
 const DEFINITION = "statcan(2) is a free, independent website, API and MCP server for every Statistics Canada table. Search in plain words, chart and compare places, then download, cite or query the data as published.";
 const OPEN_LICENCE = "https://www.statcan.gc.ca/en/terms-conditions/open-licence";
 /** The day /about's copy last changed. Bump it with any edit to that page. */
-const ABOUT_EDITED = "2026-10-19";
+const ABOUT_EDITED = "2026-10-22";
 const officialTable = (pid: string) => `https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=${pid}01`;
 /** "2026-09-30T18:20:41Z" → "30 Sep 2026". */
 const day = (iso: string) => periodLabel(iso.slice(0, 10), iso.slice(0, 10), "day");
@@ -90,7 +90,7 @@ function metaTags(meta: PageMeta) {
 }
 
 function layout(title: string, meta: PageMeta, body: HtmlEscapedString | Promise<HtmlEscapedString>, q = "", pageClass = "page", active = "") {
-  const footer = active === "mcp" ? "Streamable HTTP · /api/mcp" : active === "api" ? "JSON over HTTPS · /api/v1" : "";
+  const footer = active === "mcp" ? "Streamable HTTP · /api/mcp" : active === "api" ? "JSON and PNG · /api/v1" : "";
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} · statcan2</title>${metaTags(meta)}<style>${raw(CSS)}</style><link rel="stylesheet" href="${ASSETS}/topbar.css"><script type="module" src="${ASSETS}/docs.js"></script></head>
 <body class="doc-body">${appHeader(q, active)}<main class="${pageClass}"><div class="doc-scroll">${body}</div><footer class="footbar"><a href="/about">Independent. Not affiliated with Statistics Canada.</a><span>${footer}</span></footer></main></body></html>`;
@@ -147,6 +147,7 @@ export function pageRoutes({ db }: Config) {
       { method: "GET", path: "/api/v1/plan", description: "Turn plain text into a chart spec and alternatives.", params: "q · view=1" },
       { method: "GET POST", path: "/api/v1/view", description: "Run an encoded or JSON ViewSpec.", params: "s (GET) · ViewSpec body (POST)" },
       { method: "GET POST", path: "/api/v1/view.parquet", description: "Download the resolved view as Parquet.", params: "s (GET) · ViewSpec body (POST)" },
+      { method: "GET POST", path: "/api/v1/view.png", description: "Export a 3200×1800 chart PNG for sharing.", params: "s (GET) · ViewSpec body (POST)" },
       { method: "GET POST", path: "/api/v1/view.csv", description: "Download the resolved view as CSV.", params: "s (GET) · ViewSpec body (POST)" },
       { method: "GET", path: "/api/v1/highlights", description: "Twelve build-pinned headline indicators for the home page." },
       { method: "GET", path: "/api/v1/regions", description: "Named Canadian region definitions used in chart specs." },
@@ -181,8 +182,8 @@ export function pageRoutes({ db }: Config) {
   ];
   const codeBlock = (code: string, label = "Copy") => html`<div class="code-block"><button type="button" class="copy" data-copy>${label}</button><pre><code>${code}</code></pre></div>`;
   const apiPage = () => html`<article class="doc">
-    <header class="doc-hero"><p class="doc-kicker">API</p><h1>A free JSON API for Statistics Canada data.</h1>
-      <p>Free, read-only JSON over HTTPS for every Statistics Canada table, with values as published.</p>
+    <header class="doc-hero"><p class="doc-kicker">API</p><h1>A free API for Statistics Canada data and charts.</h1>
+      <p>Free, read-only data over HTTPS for every Statistics Canada table, with values as published. Export charts as PNG images for posts and presentations.</p>
       <p class="base">Base URL <code>https://statcan2.ca/api</code></p></header>
     <section id="quick-start"><h2>Quick start</h2>
       <div class="example"><h3>Plan a chart from text</h3>${codeBlock(`curl -s 'https://statcan2.ca/api/v1/plan?q=unemployment%20rate%20in%20Canada'`)}
@@ -192,6 +193,10 @@ export function pageRoutes({ db }: Config) {
       <div class="example"><h3>Get table observations</h3>${codeBlock(`curl -s 'https://statcan2.ca/api/v1/tables/18100004/observations?limit=2'`)}
         <pre class="response"><code>{"pid":"18100004","total":1152913,"limit":2,"rows":[{"ref_date":"1914-01","value":"6.0","status":""},{"ref_date":"1914-02","value":"6.0","status":""}]}</code></pre></div>
     </section>
+    <section id="images"><h2>Export a chart image</h2><p>Use the same 3200×1800 PNG as the Screenshot button. The 16:9 layout includes the title, notes and source footer. Pass the spec returned by the planner or a view; <code>chart.hidden</code> controls hidden series.</p>
+      ${codeBlock(`curl --fail-with-body -X POST 'https://statcan2.ca/api/v1/view.png' -H 'Content-Type: application/json' --data-binary @spec.json -o chart.png`)}
+      <p>View results include <code>links.png</code> for a direct download. Image URLs use the current data build; cache with ETag revalidation. Retry a 503 response shortly. Invalid specs return an error.</p>
+      <p>OG link previews use a separate 1200×630 image and cache policy. They are generated automatically when sharing a chart link.</p></section>
     <section id="reference"><h2>Endpoint reference</h2>
       ${endpointGroups.map(([name, endpoints]) => html`<div class="endpoint-group"><h3>${name}</h3>${endpoints.map((endpoint) => html`<div class="endpoint-row"><span class="method">${endpoint.method}</span><code>${endpoint.path}</code><span>${endpoint.description}</span>${endpoint.params ? html`<small>${endpoint.params}</small>` : ""}</div>`)}</div>`)}
     </section>
@@ -229,7 +234,7 @@ export function pageRoutes({ db }: Config) {
   };
   const mcpPage = () => html`<article class="doc">
     <header class="doc-hero"><p class="doc-kicker">MCP</p><h1>An MCP server for Statistics Canada data.</h1>
-      <p>Connect an AI agent to every Statistics Canada table.</p></header>
+      <p>Connect an AI agent to every Statistics Canada table. Generate chart images ready to share.</p></header>
     <section id="connect"><h2>Connect</h2>
       <p>Every client uses one server URL. No key or sign-in is needed.</p>${codeBlock(MCP_URL)}
       <div class="clients">${mcpClients.map((client) => html`<div class="client-row"><h3>${raw(clientIcons[client.icon])}${client.name}</h3><div>${client.steps ? html`<p>${client.steps}</p>` : ""}${client.code ? codeBlock(client.code) : ""}</div></div>`)}
@@ -238,7 +243,8 @@ export function pageRoutes({ db }: Config) {
     <section id="tools"><h2>Tools <span class="count">${mcpTools.length}</span></h2>
       ${mcpTools.map((tool) => html`<div class="tool-row"><code>${tool.name}</code><span>${tool.description.split(/(?<!\be\.g\.|\bi\.e\.)(?<=\.)\s+(?=[A-Z])/)[0]}</span><small>${toolInputs(tool).map(([name, label], i) => html`${i ? " · " : ""}<code>${name}</code> ${label}`)}</small></div>`)}
     </section>
-    <section id="prompts"><h2>Example prompts</h2><ul class="prompts"><li>Compare food and gasoline inflation in Ontario over the past five years.</li><li>Show unemployment rates for the Prairies and Atlantic Canada.</li><li>Which Statistics Canada tables cover housing in Toronto?</li></ul></section>
+    <section id="images"><h2>Chart images</h2><p>Use <code>plan_chart</code> to get a spec, then <code>render_chart</code> to generate a 3200×1800 PNG through the image API. The tool returns the image, download and chart URLs, and data build IDs. If your client does not display images, open the returned download URL.</p></section>
+    <section id="prompts"><h2>Example prompts</h2><ul class="prompts"><li>Compare food and gasoline inflation in Ontario over the past five years.</li><li>Show unemployment rates for the Prairies and Atlantic Canada.</li><li>Which Statistics Canada tables cover housing in Toronto?</li><li>Render a shareable PNG of food inflation in Ontario over the past five years.</li></ul></section>
   </article>`;
 
   // Facts for /about and llms.txt, from the build. `captured` is the newest Statistics Canada capture in it.
@@ -250,7 +256,7 @@ export function pageRoutes({ db }: Config) {
   const which = `It depends on the job. Use statcan(2) to find a table by asking in plain words, chart it, compare provinces or cities, or pull the same numbers into a spreadsheet, code or an AI agent. Values stay exactly as Statistics Canada published them, and every chart links to its source table. Use statcan.gc.ca for official releases in The Daily, analysis and methodology, numbers released after our last capture on ${captured}, and anything you must cite as the official source.`;
   const aboutPage = () => html`<article class="doc prose">
     <header class="doc-hero"><p class="doc-kicker">About</p><h1>statcan(2) is a free, independent site for Statistics Canada data.</h1>
-      <p>It is for researchers, journalists, students and developers. Search every published table in plain words, chart it and compare places. Then download it, cite it, or query it through an API or an MCP server for AI agents.</p>
+      <p>It is for researchers, journalists, students and developers. Search every published table in plain words, chart it and compare places. Then download it, export a chart image for sharing, cite it, or query it through an API or an MCP server for AI agents.</p>
       <p class="base">Published ${published} · Updated ${updated}</p></header>
     <section id="which"><h2>Should I use statcan(2) or the Statistics Canada website?</h2><p>${which}</p></section>
     <section id="coverage"><h2>What does it cover?</h2><ul>
@@ -262,7 +268,7 @@ export function pageRoutes({ db }: Config) {
       <li><a href="/">Search</a> in plain words, for example <a href="/?q=unemployment%20rate%20in%20Alberta">unemployment rate in Alberta</a>, and get a chart.</li>
       <li>Compare places, group regions, see change over any window, or index to a year.</li>
       <li>Open the table, notes and citation for any chart. Download CSV, Parquet or the original Statistics Canada ZIP.</li>
-      <li>Use the free <a href="/api">JSON API</a>, or connect an AI agent through the <a href="/mcp">MCP server</a>. No key or sign-in is needed.</li></ul></section>
+      <li>Use the free <a href="/api">data and chart API</a>, or connect an AI agent through the <a href="/mcp">MCP server</a>. No key or sign-in is needed.</li></ul></section>
     <section id="who"><h2>Who runs it?</h2>
       <p>statcan(2) is an independent, open-source project. It is not affiliated with or endorsed by Statistics Canada. The code is on <a href="https://github.com/hemaaanth/statcan2">GitHub</a>. You can support it on <a href="https://buymeacoffee.com/statcan2">Buy Me a Coffee</a>.</p>
       <p>Source: Statistics Canada. The data is used under the <a href="${OPEN_LICENCE}">Statistics Canada Open Licence</a>.</p></section>
@@ -312,7 +318,9 @@ Independent. Not affiliated with Statistics Canada. Values stay as published. ${
 ## Use it
 
 - [Search and chart](${origin}/?q=unemployment%20rate%20in%20Canada): put a question in plain words in \`q\`.
-- [JSON API](${origin}/api): free and read-only. No key.
+- [Data and chart API](${origin}/api): free and read-only. No key.
+- Chart PNG: GET ${origin}/api/v1/view.png?s=<base64url ViewSpec>, or POST a JSON ViewSpec. Returns a 3200×1800 sharing image. View results include links.png. Separate from OG link previews.
+- MCP chart images: call plan_chart for a spec, then render_chart with that spec. Returns image content, URLs, and data build IDs.
 - [OpenAPI document](${origin}/api/v1/openapi.json): every API route.
 - [MCP server](${origin}/mcp): Streamable HTTP at ${origin}/api/mcp. No key.
 - [About](${origin}/about): what the site covers, and when to use Statistics Canada's own site instead.
@@ -362,10 +370,10 @@ Independent. Not affiliated with Statistics Canada. Values stay as published. ${
 
   site.get("/developers", (c) => c.redirect("/api", 301));
   site.get("/api", (c) => c.html(layout("API",
-    metadata(c, "API · statcan2", "Free, read-only JSON for every Statistics Canada table.", "/og/text.png?title=API"),
+    metadata(c, "API · statcan2", "Free Statistics Canada data and sharing chart images through one API.", "/og/text.png?title=API"),
     apiPage(), "", "doc-shell", "api")));
   site.get("/mcp", (c) => c.html(layout("MCP",
-    metadata(c, "MCP · statcan2", "Connect an AI agent to every Statistics Canada table.", "/og/text.png?title=MCP"),
+    metadata(c, "MCP · statcan2", "Query Statistics Canada data and render sharing chart images with an AI agent.", "/og/text.png?title=MCP"),
     mcpPage(), "", "doc-shell", "mcp")));
 
   site.get("/tables/:pid", (c) => {

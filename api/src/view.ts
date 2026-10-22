@@ -900,7 +900,7 @@ export async function runView(db: Db, input: ViewSpec, opts: { origin?: string }
     axes, series: accepted.map((g) => g.series),
     period: { from: periodDates[0] ?? null, to: periodDates.at(-1) ?? null }, notes, group_notes, sources, warnings,
     links: { self: link(`/api/v1/view?s=${url}`), parquet: link(`/api/v1/view.parquet?s=${url}`),
-      csv: link(`/api/v1/view.csv?s=${url}`), page: link(`/?s=${url}`) } };
+      csv: link(`/api/v1/view.csv?s=${url}`), png: link(`/api/v1/view.png?s=${url}`), page: link(`/?s=${url}`) } };
   exportsFor.set(result, accepted.flatMap((g) => g.series.points.map((p, i): ExportRow => ({
     series_key: g.series.key, series_name: g.series.name, layer: g.series.layer, pid: g.series.pid,
     table_number: layers.find((l) => l.index === g.series.layer)!.cube.table_number,

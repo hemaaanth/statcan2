@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { existsSync } from "node:fs";
 import { openFromEnv } from "../src/config.ts";
+import { closePngRenderer } from "../src/png.ts";
 import { chartSvg, ogRoutes } from "../src/og.ts";
 import { pageRoutes } from "../src/pages.ts";
 import { chartRoutes } from "../src/chart_api.ts";
@@ -16,7 +17,7 @@ const options = { skip: !mounted && "build is not mounted" };
 let db: Db;
 let captureDir: string | undefined;
 before(async () => { if (mounted) ({ db, captureDir } = await openFromEnv()); });
-after(() => { if (mounted) db.close(); });
+after(async () => { await closePngRenderer(); if (mounted) db.close(); });
 
 const chart: ViewSpec = { v: 1, layers: [{ pid: "18100004", dims: {
   "1": { use: "series", members: { in: ["Calgary, Alberta", "Alberta"] } },
@@ -241,4 +242,25 @@ test("PUBLIC_ORIGIN overrides proxy headers for OG image and URL", options, asyn
   const host = await (await pageRoutes({ db, captureDir }).request("/api",
     { headers: { Host: "plain.example:8080" } })).text();
   assert.equal(property(host, "og:image"), `${published}/og/text.png?title=API`);
+});
+
+
+test("sharing PNG API GET/POST agree and ETag revalidation returns 304", options, async () => {
+  const app = chartRoutes({ db });
+  const get = await app.request(`/view.png?s=${encoded}`);
+  assert.equal(get.status, 200);
+  assert.equal(get.headers.get("content-type"), "image/png");
+  assert.equal(get.headers.get("cache-control"), "public, no-cache");
+  assert.equal(get.headers.get("x-statcan-build"), db.manifest.build_id);
+  const bytes = Buffer.from(await get.arrayBuffer());
+  assert.equal(bytes.readUInt32BE(16), 3200);
+  assert.equal(bytes.readUInt32BE(20), 1800);
+  const post = await app.request("/view.png", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(chart) });
+  assert.equal(post.status, 200);
+  assert.deepEqual(Buffer.from(await post.arrayBuffer()), bytes);
+  const etag = get.headers.get("etag")!;
+  const unchanged = await app.request(`/view.png?s=${encoded}`, { headers: { "If-None-Match": etag } });
+  assert.equal(unchanged.status, 304);
+  assert.equal((await unchanged.arrayBuffer()).byteLength, 0);
+  assert.equal((await app.request(`/view.png?s=${encoded}`, { headers: { "If-None-Match": '"stale"' } })).status, 200);
 });

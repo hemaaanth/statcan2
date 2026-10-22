@@ -1,6 +1,6 @@
 // The app screen: type → GET /api/v1/plan → chart; builder edits → POST /api/v1/view. First paint is server-rendered from the same state.
 import { initBuilder } from "./builder.js";
-import { chartPng, clearChart, drawChart } from "./chart.js";
+import { screenshotSpec, clearChart, drawChart } from "./chart.js";
 import { PUBLIC_ORIGIN } from "./export-layout.js";
 import { typingDemo } from "./demo.js";
 import { decodeSpec, encodeSpec, parts, portableSpec } from "./render.js";
@@ -325,7 +325,7 @@ function savePng(blob, title) {
 }
 
 /**
- * Screenshot: copy the export PNG (chartPng: the fixed 1600×900 layout) to the clipboard. ClipboardItem gets the Promise, not an awaited Blob,
+ * Screenshot: copy the API export PNG (the fixed 1600×900 layout at 2×) to the clipboard. ClipboardItem gets the Promise, not an awaited Blob,
  * so Safari keeps the click's user activation while the PNG renders. No ClipboardItem, an insecure context or a
  * refused write (permission, browser policy): the same PNG is downloaded instead, and the button says "Saved".
  * The status line repeats the outcome, because on phones the button shows only its icon.
@@ -338,7 +338,11 @@ pngBtn.addEventListener("click", async () => {
   if (!state.view) return;
   const view = state.view;
   pngBtn.disabled = true;
-  const png = chartPng(view);
+  const png = fetch("/api/v1/view.png", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(screenshotSpec(view)) })
+    .then(async (response) => {
+      if (!response.ok) throw new Error((await response.json()).error || "Image export failed");
+      return response.blob();
+    });
   png.catch(() => {}); // awaited below; this only keeps an early rejection from being reported as unhandled
   try {
     let copied = false;

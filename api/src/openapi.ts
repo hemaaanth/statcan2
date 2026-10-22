@@ -270,7 +270,7 @@ const chart = {
       } } },
       warnings: { type: "array", items: { type: "object", properties: { code: { type: "string", description: "Includes index_base_missing when a series lacks its requested published index base, territory_proxy when capital-city data stands in for an unavailable territory total, and substituted_geography for nearby published alternatives." }, message: { type: "string" }, total: { type: "integer" } } } },
       links: { type: "object", properties: { self: { type: "string" }, parquet: { type: "string" },
-        csv: { type: "string" }, page: { type: "string" } } },
+        csv: { type: "string" }, png: { type: "string" }, page: { type: "string" } } },
     } },
     PlanResult: { type: "object", properties: { ...provenance, status: { enum: ["ok", "need_more", "no_match"] },
       q: { type: "string" }, reason: { type: "string" }, spec: { $ref: "#/components/schemas/ViewSpec" },
@@ -332,6 +332,15 @@ const chart = {
         responses: { "200": { description: "One row per shown point, including hidden series",
           content: { [format === "parquet" ? "application/vnd.apache.parquet" : "text/csv"]: { schema: { type: "string", format: format === "parquet" ? "binary" : undefined } } } },
           "400": { description: "Invalid ViewSpec" }, "404": { description: "Unknown PID" }, "422": { description: "Invalid view" } } },
+    }])),
+    "/view.png": Object.fromEntries(["get", "post"].map((method) => [method, {
+      summary: "Export a chart as a 3200×1800 PNG for sharing (16:9)",
+      description: "Same renderer as the website Screenshot button. Includes titles, notes, source table footer and spec hidden-series selection. Separate from OG link previews. Cache-Control: public, no-cache; ETag and build headers identify the output. Revalidate URLs after data updates. Rendering is limited to two concurrent exports; retry 503 responses.",
+      ...(method === "get" ? { parameters: [{ name: "s", in: "query", required: true, schema: { type: "string" }, description: "base64url ViewSpec" }, { name: "If-None-Match", in: "header", schema: { type: "string" } }] }
+        : { requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/ViewSpec" } } } } }),
+      responses: { "200": { description: "3200×1800 sharing PNG", content: { "image/png": { schema: { type: "string", format: "binary" } } }, headers: {
+        ETag: { schema: { type: "string" } }, "X-Statcan-Build": { schema: { type: "string" } }, "X-Statcan-Normalized-Build": { schema: { type: "string" } },
+      } }, ...(method === "get" ? { "304": { description: "Image unchanged" } } : {}), "400": { description: "Invalid ViewSpec" }, "404": { description: "Unknown PID" }, "422": { description: "Invalid selection" }, "413": { description: "ViewSpec exceeds 64 KiB" }, "503": { description: "Renderer busy or unavailable; retry shortly" } },
     }])),
     "/og/chart.png": { servers: siteServers, get: { summary: "1200×630 chart social card; missing or invalid s uses the site card",
       parameters: [{ name: "s", in: "query", schema: { type: "string" }, description: "base64url ViewSpec" }],

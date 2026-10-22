@@ -242,6 +242,11 @@ export function drawChart(el, view, label) {
 }
 export function clearChart() { chart?.destroy(); chart = undefined; }
 
+/** Snapshot session-only legend visibility into the portable API spec. */
+export function screenshotSpec(view) {
+  return { ...view.spec, chart: { ...view.spec.chart, hidden: view.series.filter((s, i) => !(chart?.series[i]?.visible ?? !s.hidden)).map((s) => s.key) } };
+}
+
 let fontCss;
 /**
  * @font-face rules for the page's Geist / Geist Mono faces (latin subset), each woff2 inlined as a data URL. The
@@ -251,6 +256,8 @@ let fontCss;
  */
 async function embeddedFonts() {
   if (fontCss !== undefined) return fontCss;
+  const bundled = document.querySelector("style[data-export-fonts]");
+  if (bundled) return fontCss = bundled.textContent;
   const hrefs = [...document.querySelectorAll("style")].flatMap((s) => [...s.textContent.matchAll(/@import url\(['"]?([^'")]+fonts\.googleapis\.com[^'")]+)['"]?\)/g)].map((m) => m[1]));
   try {
     const text = (await Promise.all(hrefs.map(async (h) => (await fetch(h)).text()))).join("\n");

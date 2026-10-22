@@ -5,7 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/api
 COPY api/package.json api/package-lock.json ./
-RUN npm ci --omit=dev
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npm ci --omit=dev && npx playwright install --with-deps --only-shell chromium && chmod -R a+rX /ms-playwright
 COPY api/src ./src
 COPY api/public ./public
 COPY data/ref /app/data/ref
