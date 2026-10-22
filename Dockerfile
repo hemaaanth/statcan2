@@ -1,6 +1,8 @@
 # The statcan2.ca server. Build from the repo root: the API reads api/ and data/ref/.
 # The data (Clean builds, normalized series, code sets) is mounted at /data at run time; see api/README.md.
-FROM node:26-slim
+FROM node:26.12.1-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/api
 COPY api/package.json api/package-lock.json ./
 RUN npm ci --omit=dev
